@@ -17,6 +17,20 @@ pub enum DebloadError {
     ProtectedPackage(String),
     /// Le paquet n'installe aucune application lançable (outil en ligne de commande).
     NotLaunchable(String),
+    /// Référence de dépôt GitHub incompréhensible.
+    InvalidRepo(String),
+    /// Le dépôt n'a aucune release publiée, ou n'existe pas.
+    NoRelease(String),
+    /// La release ne publie aucun paquet .deb.
+    NoDebAsset(String),
+    /// Limite d'appels à l'API GitHub atteinte.
+    GithubRateLimited,
+    /// Échec générique côté GitHub, message conservé.
+    GithubFailed(String),
+    /// Une URL de téléchargement sortant des hôtes GitHub.
+    UntrustedUrl(String),
+    /// Plusieurs paquets conviennent : à l'utilisateur de trancher.
+    AssetChoiceRequired,
     /// L'utilisateur a fermé l'invite polkit.
     AuthCancelled,
     /// Une autre opération apt/dpkg est en cours.
@@ -37,6 +51,16 @@ impl std::fmt::Display for DebloadError {
             Self::NotManaged(n) => write!(f, "Debload n'a pas installé le paquet {n}"),
             Self::ProtectedPackage(n) => write!(f, "{n} est un paquet système essentiel"),
             Self::NotLaunchable(n) => write!(f, "{n} n'installe pas d'application à ouvrir"),
+            Self::InvalidRepo(r) => write!(f, "Dépôt GitHub non reconnu : {r}"),
+            Self::NoRelease(r) => write!(f, "{r} n'a aucune release publiée"),
+            Self::NoDebAsset(r) => write!(f, "La dernière release de {r} ne contient aucun .deb"),
+            Self::GithubRateLimited => write!(
+                f,
+                "Limite d'appels à GitHub atteinte. Réessaie dans quelques minutes."
+            ),
+            Self::GithubFailed(m) => write!(f, "GitHub : {m}"),
+            Self::UntrustedUrl(u) => write!(f, "Téléchargement refusé, hors de GitHub : {u}"),
+            Self::AssetChoiceRequired => write!(f, "Plusieurs paquets conviennent : choisis-en un"),
             Self::AuthCancelled => write!(f, "Authentification annulée"),
             Self::DpkgLocked => write!(f, "Une autre opération apt est en cours"),
             Self::CommandFailed(m) => write!(f, "{m}"),

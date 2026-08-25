@@ -2,8 +2,9 @@ import { useCallback, useState } from "react";
 
 import { InstallView } from "./views/InstallView";
 import { PackagesView } from "./views/PackagesView";
+import { ReposView } from "./views/ReposView";
 
-type Tab = "install" | "packages";
+type Tab = "install" | "repos" | "packages";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("install");
@@ -31,6 +32,15 @@ export default function App() {
           <button
             type="button"
             role="tab"
+            aria-selected={tab === "repos"}
+            className={`tabs__tab${tab === "repos" ? " tabs__tab--active" : ""}`}
+            onClick={() => setTab("repos")}
+          >
+            Dépôts
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={tab === "packages"}
             className={`tabs__tab${tab === "packages" ? " tabs__tab--active" : ""}`}
             onClick={() => setTab("packages")}
@@ -41,11 +51,9 @@ export default function App() {
       </header>
 
       <main className="app__main">
-        {tab === "install" ? (
-          <InstallView onInstalled={handleInstalled} />
-        ) : (
-          <PackagesView refreshToken={refreshToken} />
-        )}
+        {tab === "install" && <InstallView onInstalled={handleInstalled} />}
+        {tab === "repos" && <ReposView onInstalled={handleInstalled} />}
+        {tab === "packages" && <PackagesView refreshToken={refreshToken} />}
       </main>
     </div>
   );

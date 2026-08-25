@@ -85,6 +85,22 @@ pub fn is_protected(runner: &dyn CommandRunner, name: &str) -> Result<bool, Debl
     Ok(essential || required)
 }
 
+/// Compare deux versions selon les règles Debian, via dpkg lui-même.
+///
+/// Ces règles ne se réduisent pas à une comparaison de chaînes : `1.10` est
+/// postérieure à `1.9`, et un suffixe `~rc1` précède la version finale. Plutôt
+/// que de les réimplémenter, on interroge l'outil qui fait autorité.
+pub fn is_newer(runner: &dyn CommandRunner, candidate: &str, installed: &str) -> bool {
+    if candidate == installed {
+        return false;
+    }
+
+    runner
+        .run("dpkg", &["--compare-versions", candidate, "gt", installed])
+        .map(|out| out.success())
+        .unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +180,30 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-query", "code"], CommandOutput::ok("no|optional"));
         assert!(!is_protected(&fake, "code").unwrap());
+    }
+
+    #[test]
+    fn compares_versions_the_way_dpkg_does() {
+        let fake = FakeRunner::new();
+        fake.on(&["--compare-versions"], CommandOutput::ok(""));
+        assert!(is_newer(&fake, "0.1.9", "0.1.8"));
+
+        let call = fake.calls().into_iter().next().unwrap();
+        assert!(call.contains(&"gt".to_string()));
+    }
+
+    #[test]
+    fn an_identical_version_is_not_newer_and_costs_no_call() {
+        let fake = FakeRunner::new();
+        assert!(!is_newer(&fake, "0.1.8", "0.1.8"));
+        assert!(fake.calls().is_empty());
+    }
+
+    #[test]
+    fn an_older_version_is_not_newer() {
+        let fake = FakeRunner::new();
+        fake.on(&["--compare-versions"], CommandOutput::fail(1, ""));
+        assert!(!is_newer(&fake, "0.1.7", "0.1.8"));
     }
 
     #[test]

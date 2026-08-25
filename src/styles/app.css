@@ -484,3 +484,71 @@ body {
 .details summary:hover {
   color: var(--text);
 }
+
+/* Page « Dépôts » */
+.repo-add {
+  display: flex;
+  gap: 10px;
+}
+
+.repo-add__field {
+  flex: 1;
+  padding: 9px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  font: inherit;
+}
+
+.repo-add__field::placeholder {
+  color: var(--text-dim);
+}
+
+.repo-add__field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.repo {
+  align-items: flex-start;
+}
+
+.repo__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.repo__state--update {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.repo__state--current {
+  color: var(--success);
+}
+
+.repo__state--error {
+  color: var(--danger);
+}
+
+.repo__retry {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.repo__assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}

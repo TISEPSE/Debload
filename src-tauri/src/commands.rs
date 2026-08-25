@@ -10,6 +10,8 @@ use crate::history::{self, HistoryEntry};
 use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
 use crate::privileged::PrivilegedApt;
+use crate::repo_ops::{self, RepoRelease, RepoRow};
+use crate::repos;
 use crate::progress::ProgressEvent;
 use crate::runner::CommandRunner;
 
@@ -20,6 +22,12 @@ pub struct AppState {
     /// Les deux seules opérations qui exigent root.
     pub apt: Arc<dyn PrivilegedApt>,
     pub history_path: PathBuf,
+    /// Choix de l'utilisateur sur le catalogue de dépôts.
+    pub repos_path: PathBuf,
+    /// Catalogue livré par le paquet.
+    pub catalog_path: PathBuf,
+    /// Où atterrissent les .deb téléchargés.
+    pub cache_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -760,4 +768,91 @@ mod tests {
         assert_eq!(err, DebloadError::AuthCancelled);
         assert!(crate::history::load(&hist).contains("code"));
     }
+}
+
+// --- Page « Dépôts » --------------------------------------------------------
+
+/// Liste les dépôts. N'appelle pas le réseau : la page s'affiche aussitôt,
+/// chaque ligne se complétant ensuite par `refresh_repo`.
+#[tauri::command]
+pub fn list_repos(state: State<'_, AppState>) -> Result<Vec<RepoRow>, DebloadError> {
+    let catalog = repos::load_catalog(&state.catalog_path);
+    let user = repos::load_user(&state.repos_path);
+    Ok(repo_ops::rows(state.runner.as_ref(), &catalog, &user))
+}
+
+/// Interroge GitHub pour un dépôt.
+#[tauri::command]
+pub async fn refresh_repo(
+    slug: String,
+    state: State<'_, AppState>,
+) -> Result<RepoRelease, DebloadError> {
+    let runner = state.runner.clone();
+    let repos_path = state.repos_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let user = repos::load_user(&repos_path);
+        repo_ops::refresh(runner.as_ref(), &user, &slug)
+    })
+    .await
+    .map_err(|e| DebloadError::Io(e.to_string()))?
+}
+
+#[tauri::command]
+pub fn add_repo(input: String, state: State<'_, AppState>) -> Result<(), DebloadError> {
+    let mut user = repos::load_user(&state.repos_path);
+    repo_ops::add(&mut user, &input)?;
+    repos::save_user(&state.repos_path, &user)
+}
+
+/// Retire un dépôt : définitivement s'il avait été ajouté à la main, en le
+/// masquant s'il vient du catalogue livré.
+#[tauri::command]
+pub fn remove_repo(slug: String, state: State<'_, AppState>) -> Result<(), DebloadError> {
+    let mut user = repos::load_user(&state.repos_path);
+    user.hide(&slug);
+    repos::save_user(&state.repos_path, &user)
+}
+
+/// Télécharge le paquet d'une release et en lit les métadonnées.
+///
+/// L'installation elle-même passe ensuite par `install_deb`, comme pour un
+/// fichier déposé à la main : même carte de confirmation, mêmes garde-fous.
+#[tauri::command]
+pub async fn prepare_from_repo(
+    slug: String,
+    asset_name: Option<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DebInfo, DebloadError> {
+    let runner = state.runner.clone();
+    let repos_path = state.repos_path.clone();
+    let cache_dir = state.cache_dir.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut user = repos::load_user(&repos_path);
+
+        let on_progress = |percent: f32| {
+            let _ = app.emit(
+                "download-progress",
+                crate::progress::ProgressEvent {
+                    phase: crate::progress::ProgressPhase::Download,
+                    percent,
+                    message: "Téléchargement du paquet".to_string(),
+                },
+            );
+        };
+
+        repo_ops::prepare(
+            runner.as_ref(),
+            &mut user,
+            &repos_path,
+            &cache_dir,
+            &slug,
+            asset_name.as_deref(),
+            &on_progress,
+        )
+    })
+    .await
+    .map_err(|e| DebloadError::Io(e.to_string()))?
 }

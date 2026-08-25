@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "owner": "TISEPSE",
+      "repo": "MailFlow",
+      "label": "MailFlow",
+      "description": "Tri automatique de la boîte Gmail"
+    },
+    {
+      "owner": "TISEPSE",
+      "repo": "Nexus",
+      "label": "Nexus",
+      "description": null
+    }
+  ]
+}

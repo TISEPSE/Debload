@@ -1,5 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { DebInfo, DebloadError, ManagedPackage, OperationResult } from "./types";
+import type {
+  DebInfo,
+  DebloadError,
+  ManagedPackage,
+  OperationResult,
+  RepoRelease,
+  RepoRow,
+} from "./types";
 
 export const inspectDeb = (path: string) => invoke<DebInfo>("inspect_deb", { path });
 
@@ -11,6 +18,17 @@ export const uninstall = (name: string, purge: boolean) =>
   invoke<OperationResult>("uninstall", { name, purge });
 
 export const launchApp = (name: string) => invoke<void>("launch_app", { name });
+
+export const listRepos = () => invoke<RepoRow[]>("list_repos");
+
+export const refreshRepo = (slug: string) => invoke<RepoRelease>("refresh_repo", { slug });
+
+export const addRepo = (input: string) => invoke<void>("add_repo", { input });
+
+export const removeRepo = (slug: string) => invoke<void>("remove_repo", { slug });
+
+export const prepareFromRepo = (slug: string, assetName: string | null) =>
+  invoke<DebInfo>("prepare_from_repo", { slug, assetName });
 
 /**
  * Traduit une erreur Rust en phrase affichable.
@@ -38,6 +56,20 @@ export function formatError(error: unknown): string {
       return "Nom de paquet invalide.";
     case "not_launchable":
       return `${err.detail} n'installe pas d'application à ouvrir.`;
+    case "invalid_repo":
+      return `Dépôt GitHub non reconnu : ${err.detail}`;
+    case "no_release":
+      return `${err.detail} n'a publié aucune release.`;
+    case "no_deb_asset":
+      return "La dernière release ne contient aucun paquet .deb.";
+    case "asset_choice_required":
+      return "Plusieurs paquets conviennent : choisis-en un.";
+    case "github_rate_limited":
+      return "Limite d'appels à GitHub atteinte. Réessaie dans quelques minutes.";
+    case "github_failed":
+      return `GitHub : ${err.detail}`;
+    case "untrusted_url":
+      return "Téléchargement refusé : l'adresse sort de GitHub.";
     case "not_managed":
       return "Debload n'a pas installé ce paquet, il ne peut pas le désinstaller.";
     case "protected_package":

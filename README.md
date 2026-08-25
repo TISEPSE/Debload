@@ -7,8 +7,15 @@ Installe un paquet `.deb` déposé dans sa fenêtre, et désinstalle en un clic 
 - **Installer** — dépose un `.deb` ou choisis-le avec « Parcourir… ». Debload affiche
   ses métadonnées, puis lance `apt-get install`, ce qui résout les dépendances au
   passage. Une barre d'avancement suit ce que rapporte apt.
+- **Dépôts** — un catalogue de dépôts GitHub livré avec l'application
+  (`/usr/lib/Debload/repos.json`). Chaque ligne indique si le paquet est installé, à
+  jour, ou si une nouvelle release existe. Tu peux ajouter tes propres dépôts et masquer
+  ceux du catalogue ; tes choix sont gardés à part et survivent aux mises à jour.
 - **Mes paquets** — la liste de ce que Debload a installé, avec un bouton de
   désinstallation par ligne, et une option de purge des fichiers de configuration.
+
+Un paquet venu d'un dépôt passe par le même chemin qu'un fichier déposé à la main :
+il est téléchargé, ses métadonnées s'affichent, et tu confirmes avant l'installation.
 
 Debload ne désinstalle que ce qu'il a installé, et refuse de toucher aux paquets que
 dpkg déclare essentiels.
@@ -31,6 +38,10 @@ polkit, aucune entrée sudoers.
 
 ## Sécurité
 
+- Seuls `github.com` et les hôtes de fichiers de GitHub sont téléchargeables : une
+  release ne peut pas rediriger Debload ailleurs.
+- Les dépôts privés passent par le jeton de ta session `gh`, demandé à la volée. Rien
+  n'est stocké, et il n'atteint jamais l'interface.
 - Aucun shell n'intervient : les commandes sont lancées avec des arguments séparés,
   donc un nom de fichier contenant `;` ou `$(…)` reste une chaîne littérale.
 - Les noms de paquets sont validés contre le format Debian avant tout appel privilégié,
@@ -43,8 +54,8 @@ polkit, aucune entrée sudoers.
 ```bash
 npm install
 npm run tauri dev            # lancer
-npm test                     # tests frontend (37)
-cd src-tauri && cargo test   # tests backend (85)
+npm test                     # tests frontend (51)
+cd src-tauri && cargo test   # tests backend (123)
 npm run tauri build          # produire le .deb
 ```
 

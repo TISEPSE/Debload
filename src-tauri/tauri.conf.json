@@ -26,7 +26,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb"],
+    "targets": [
+      "deb"
+    ],
     "category": "Utility",
     "shortDescription": "Installe et désinstalle des paquets .deb",
     "longDescription": "Debload installe un paquet .deb déposé dans sa fenêtre et désinstalle en un clic ce qu'il a installé.",
@@ -39,8 +41,16 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "policykit-1", "apt", "dpkg"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "policykit-1",
+          "apt",
+          "dpkg"
+        ]
       }
+    },
+    "resources": {
+      "repos.default.json": "repos.json"
     }
   }
 }

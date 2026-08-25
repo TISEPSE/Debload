@@ -7,6 +7,7 @@
   --text-dim: #9aa0aa;
   --accent: #e95420; /* orange Ubuntu */
   --danger: #c0392b;
+  --danger-strong: #a53226;
   --success: #2e9e5b;
   --radius: 10px;
 }
@@ -187,6 +188,7 @@ body {
   border-radius: 7px;
   font: inherit;
   cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 
 .button:disabled {
@@ -209,6 +211,23 @@ body {
   background: transparent;
   border-color: var(--danger);
   color: var(--danger);
+}
+
+/* Le contour se remplit au survol : l'action destructrice s'annonce
+   franchement avant le clic. */
+.button--danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+.button--danger:active:not(:disabled) {
+  background: var(--danger-strong);
+  border-color: var(--danger-strong);
+}
+
+.button--danger:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
 }
 
 /* Journal */

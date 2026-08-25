@@ -9,7 +9,7 @@
     {
       "owner": "localsend",
       "repo": "localsend",
-      "label": "localsend",
+      "label": "LocalSend",
       "description": "An open-source cross-platform alternative to AirDrop"
     },
     {
@@ -19,106 +19,16 @@
       "description": "Tri automatique de la boîte Gmail"
     },
     {
-      "owner": "gnmyt",
-      "repo": "MySpeed",
-      "label": "MySpeed",
-      "description": "A speed test analysis software that shows your internet speed for up to 30 days"
-    },
-    {
-      "owner": "gethomepage",
-      "repo": "homepage",
-      "label": "homepage",
-      "description": "A highly customizable homepage (or startpage / application dashboard) with Docker and service API integrati…"
-    },
-    {
-      "owner": "anthropics",
-      "repo": "claude-plugins-community",
-      "label": "claude-plugins-community",
-      "description": "Community plugin marketplace for Claude Cowork and Claude Code. Read-only mirror — submit plugins at clau.d…"
-    },
-    {
-      "owner": "TauricResearch",
-      "repo": "TradingAgents",
-      "label": "TradingAgents",
-      "description": "TradingAgents: Multi-Agents LLM Financial Trading Framework"
-    },
-    {
       "owner": "tinyhumansai",
       "repo": "openhuman",
-      "label": "openhuman",
+      "label": "OpenHuman",
       "description": "Your Personal AI super intelligence. A brain that builds a local-first memory of your life, a fantastic orc…"
-    },
-    {
-      "owner": "anthropics",
-      "repo": "claude-plugins-official",
-      "label": "claude-plugins-official",
-      "description": "Official, Anthropic-managed directory of high quality Claude Code Plugins."
-    },
-    {
-      "owner": "Leonxlnx",
-      "repo": "taste-skill",
-      "label": "taste-skill",
-      "description": "Taste-Skill - gives your AI good taste. stops the AI from generating boring, generic slop"
-    },
-    {
-      "owner": "0xSobky",
-      "repo": "HackVault",
-      "label": "HackVault",
-      "description": "A container repository for my public web hacks!"
-    },
-    {
-      "owner": "freeCodeCamp",
-      "repo": "freeCodeCamp",
-      "label": "freeCodeCamp",
-      "description": "freeCodeCamp.org's open-source codebase and curriculum. Learn math, programming, and computer science for f…"
-    },
-    {
-      "owner": "shadcn-ui",
-      "repo": "ui",
-      "label": "ui",
-      "description": "A set of beautifully-designed, accessible components and a code distribution platform. Works with your favo…"
-    },
-    {
-      "owner": "mui",
-      "repo": "material-ui",
-      "label": "material-ui",
-      "description": "Material UI: Comprehensive React component library that implements Google's Material Design. Free forever."
-    },
-    {
-      "owner": "facebook",
-      "repo": "docusaurus",
-      "label": "docusaurus",
-      "description": "Easy to maintain open source documentation websites."
     },
     {
       "owner": "usememos",
       "repo": "memos",
-      "label": "memos",
+      "label": "Memos",
       "description": "Open-source, self-hosted note-taking tool built for quick capture. Markdown-native, lightweight, and fully…"
-    },
-    {
-      "owner": "makeplane",
-      "repo": "plane",
-      "label": "plane",
-      "description": "🔥🔥🔥 Open-source Jira, Linear, Monday, and ClickUp alternative. Plane is a modern project management platfor…"
-    },
-    {
-      "owner": "remotion-dev",
-      "repo": "remotion",
-      "label": "remotion",
-      "description": "🎥      Make videos programmatically with React"
-    },
-    {
-      "owner": "FlowiseAI",
-      "repo": "Flowise",
-      "label": "Flowise",
-      "description": "Build AI Agents, Visually"
-    },
-    {
-      "owner": "DavidHDev",
-      "repo": "react-bits",
-      "label": "react-bits",
-      "description": "An open source collection of animated, interactive & fully customizable React components for building memor…"
     }
   ]
 }

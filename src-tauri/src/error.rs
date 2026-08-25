@@ -15,6 +15,8 @@ pub enum DebloadError {
     NotManaged(String),
     /// Paquet essentiel ou de priorité requise.
     ProtectedPackage(String),
+    /// Le paquet n'installe aucune application lançable (outil en ligne de commande).
+    NotLaunchable(String),
     /// L'utilisateur a fermé l'invite polkit.
     AuthCancelled,
     /// Une autre opération apt/dpkg est en cours.
@@ -34,6 +36,7 @@ impl std::fmt::Display for DebloadError {
             Self::InvalidPackageName(n) => write!(f, "Nom de paquet invalide : {n}"),
             Self::NotManaged(n) => write!(f, "Debload n'a pas installé le paquet {n}"),
             Self::ProtectedPackage(n) => write!(f, "{n} est un paquet système essentiel"),
+            Self::NotLaunchable(n) => write!(f, "{n} n'installe pas d'application à ouvrir"),
             Self::AuthCancelled => write!(f, "Authentification annulée"),
             Self::DpkgLocked => write!(f, "Une autre opération apt est en cours"),
             Self::CommandFailed(m) => write!(f, "{m}"),

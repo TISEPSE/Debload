@@ -5,7 +5,7 @@ export type InstallState =
   | { status: "inspecting"; path: string }
   | { status: "ready"; info: DebInfo }
   | { status: "installing"; info: DebInfo; logs: LogLine[] }
-  | { status: "done"; info: DebInfo; logs: LogLine[] }
+  | { status: "done"; info: DebInfo; logs: LogLine[]; launchable: boolean }
   | { status: "error"; message: string; logs: LogLine[] };
 
 export type InstallAction =
@@ -13,7 +13,7 @@ export type InstallAction =
   | { type: "inspected"; info: DebInfo }
   | { type: "install_started" }
   | { type: "log"; line: LogLine }
-  | { type: "install_succeeded" }
+  | { type: "install_succeeded"; launchable: boolean }
   | { type: "failed"; message: string }
   | { type: "reset" };
 
@@ -42,7 +42,12 @@ export function installReducer(state: InstallState, action: InstallAction): Inst
 
     case "install_succeeded":
       return state.status === "installing"
-        ? { status: "done", info: state.info, logs: state.logs }
+        ? {
+            status: "done",
+            info: state.info,
+            logs: state.logs,
+            launchable: action.launchable,
+          }
         : state;
 
     case "failed":

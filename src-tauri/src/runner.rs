@@ -41,6 +41,12 @@ pub trait CommandRunner: Send + Sync {
         args: &[&str],
         on_line: &dyn Fn(&str, &str),
     ) -> Result<CommandOutput, DebloadError>;
+
+    /// Démarre un processus et rend la main sans l'attendre.
+    ///
+    /// Sert à ouvrir une application installée : elle doit survivre à Debload,
+    /// pas s'exécuter dans son ombre.
+    fn spawn_detached(&self, program: &str, args: &[&str]) -> Result<(), DebloadError>;
 }
 
 pub struct RealRunner;
@@ -103,6 +109,22 @@ impl CommandRunner for RealRunner {
         let status = child.wait().map_err(|e| DebloadError::Io(e.to_string()))?;
 
         Ok(CommandOutput { status: status.code(), stdout: out_buf, stderr: err_buf })
+    }
+
+    fn spawn_detached(&self, program: &str, args: &[&str]) -> Result<(), DebloadError> {
+        use std::os::unix::process::CommandExt;
+
+        Command::new(program)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            // Groupe de processus distinct : fermer Debload ne referme pas
+            // l'application qu'on vient d'ouvrir.
+            .process_group(0)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| DebloadError::Io(e.to_string()))
     }
 }
 
@@ -170,6 +192,13 @@ impl CommandRunner for FakeRunner {
             on_line("stderr", line);
         }
         Ok(out)
+    }
+
+    fn spawn_detached(&self, program: &str, args: &[&str]) -> Result<(), DebloadError> {
+        let mut call = vec![program.to_string()];
+        call.extend(args.iter().map(|a| a.to_string()));
+        self.calls.lock().unwrap().push(call);
+        Ok(())
     }
 }
 

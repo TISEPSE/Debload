@@ -2,6 +2,7 @@ pub mod commands;
 pub mod deb;
 pub mod error;
 pub mod history;
+pub mod launch;
 pub mod pkg;
 pub mod runner;
 
@@ -27,6 +28,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::inspect_deb,
             commands::install_deb,
+            commands::launch_app,
             commands::list_managed,
             commands::uninstall
         ])

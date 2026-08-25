@@ -7,6 +7,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::deb::{read_deb_info, validate_deb_path, DebInfo};
 use crate::error::{classify_failure, DebloadError};
 use crate::history::{self, HistoryEntry};
+use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
 use crate::runner::CommandRunner;
 
@@ -21,6 +22,8 @@ pub struct AppState {
 pub struct OperationResult {
     pub package: String,
     pub version: String,
+    /// Vrai si le paquet installe une application que Debload peut ouvrir.
+    pub launchable: bool,
 }
 
 /// Une ligne de sortie diffusée à l'interface pendant une opération.
@@ -118,7 +121,9 @@ pub fn install(
     });
     history::save(history_path, &hist)?;
 
-    Ok(OperationResult { package: info.package, version: info.version })
+    let launchable = is_launchable(runner, &info.package);
+
+    Ok(OperationResult { package: info.package, version: info.version, launchable })
 }
 
 /// Liste les paquets gérés par Debload, après réconciliation avec dpkg.
@@ -218,7 +223,7 @@ pub fn remove_package(
     hist.remove(name);
     history::save(history_path, &hist)?;
 
-    Ok(OperationResult { package: name.to_string(), version })
+    Ok(OperationResult { package: name.to_string(), version, launchable: false })
 }
 
 // --- Enveloppes Tauri -------------------------------------------------------
@@ -250,6 +255,12 @@ pub async fn install_deb(
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
+}
+
+/// Ouvre l'application installée par un paquet.
+#[tauri::command]
+pub fn launch_app(name: String, state: State<'_, AppState>) -> Result<(), DebloadError> {
+    launch::launch(state.runner.as_ref(), &name)
 }
 
 #[tauri::command]
@@ -372,6 +383,7 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
         fake.on(&["pkexec"], ok_install());
+        fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
         let result = install(&fake, &hist, &deb, &|_, _| {}).unwrap();
         assert_eq!(result.package, "code");
@@ -393,6 +405,7 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
         fake.on(&["pkexec"], ok_install());
+        fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
         install(&fake, &hist, &deb, &|_, _| {}).unwrap();
 
         let privileged = fake
@@ -419,6 +432,7 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
         fake.on(&["pkexec"], ok_install());
+        fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
         let seen = std::sync::Mutex::new(Vec::new());
         install(&fake, &hist, &deb, &|stream, line| {
@@ -479,11 +493,48 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
         fake.on(&["pkexec"], ok_install());
+        fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
         install(&fake, &hist, &deb, &|_, _| {}).unwrap();
         install(&fake, &hist, &deb, &|_, _| {}).unwrap();
 
         assert_eq!(crate::history::load(&hist).entries.len(), 1);
+    }
+
+    #[test]
+    fn install_reports_a_launchable_application() {
+        let dir = tempfile::tempdir().unwrap();
+        let deb = touch_deb(dir.path(), "code.deb");
+        let hist = dir.path().join("history.json");
+
+        // Une vraie entrée .desktop sur disque : c'est elle que Debload lira
+        // pour savoir s'il y a quelque chose à ouvrir.
+        let desktop = dir.path().join("applications/Code.desktop");
+        std::fs::create_dir_all(desktop.parent().unwrap()).unwrap();
+        std::fs::write(&desktop, "[Desktop Entry]\nType=Application\nExec=code %U\n").unwrap();
+
+        let fake = FakeRunner::new();
+        fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
+        fake.on(&["pkexec"], ok_install());
+        fake.on(&["dpkg", "-L"], CommandOutput::ok(desktop.to_str().unwrap()));
+
+        let result = install(&fake, &hist, &deb, &|_, _| {}).unwrap();
+        assert!(result.launchable);
+    }
+
+    #[test]
+    fn install_reports_a_command_line_package_as_not_launchable() {
+        let dir = tempfile::tempdir().unwrap();
+        let deb = touch_deb(dir.path(), "code.deb");
+        let hist = dir.path().join("history.json");
+
+        let fake = FakeRunner::new();
+        fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
+        fake.on(&["pkexec"], ok_install());
+        fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/outil\n"));
+
+        let result = install(&fake, &hist, &deb, &|_, _| {}).unwrap();
+        assert!(!result.launchable);
     }
 
     // --- list ---

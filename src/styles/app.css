@@ -333,3 +333,9 @@ body {
   justify-content: flex-end;
   gap: 10px;
 }
+
+.result__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}

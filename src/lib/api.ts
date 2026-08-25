@@ -10,6 +10,8 @@ export const listManaged = () => invoke<ManagedPackage[]>("list_managed");
 export const uninstall = (name: string, purge: boolean) =>
   invoke<OperationResult>("uninstall", { name, purge });
 
+export const launchApp = (name: string) => invoke<void>("launch_app", { name });
+
 /**
  * Traduit une erreur Rust en phrase affichable.
  *
@@ -34,6 +36,8 @@ export function formatError(error: unknown): string {
         : "Archive .deb illisible ou corrompue.";
     case "invalid_package_name":
       return "Nom de paquet invalide.";
+    case "not_launchable":
+      return `${err.detail} n'installe pas d'application à ouvrir.`;
     case "not_managed":
       return "Debload n'a pas installé ce paquet, il ne peut pas le désinstaller.";
     case "protected_package":

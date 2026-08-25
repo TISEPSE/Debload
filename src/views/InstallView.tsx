@@ -6,7 +6,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { DropZone } from "../components/DropZone";
 import { LogPanel } from "../components/LogPanel";
 import { PackageCard } from "../components/PackageCard";
-import { formatError, inspectDeb, installDeb } from "../lib/api";
+import { formatError, inspectDeb, installDeb, launchApp } from "../lib/api";
 import { initialInstallState, installReducer } from "../lib/installState";
 import type { LogLine } from "../lib/types";
 
@@ -89,8 +89,8 @@ export function InstallView({ onInstalled }: InstallViewProps) {
     const path = state.info.sourcePath;
     dispatch({ type: "install_started" });
     try {
-      await installDeb(path);
-      dispatch({ type: "install_succeeded" });
+      const result = await installDeb(path);
+      dispatch({ type: "install_succeeded", launchable: result.launchable });
       onInstalled();
     } catch (error) {
       dispatch({ type: "failed", message: formatError(error) });
@@ -98,6 +98,15 @@ export function InstallView({ onInstalled }: InstallViewProps) {
   }, [state, onInstalled]);
 
   const reset = useCallback(() => dispatch({ type: "reset" }), []);
+
+  const launch = useCallback(async () => {
+    if (state.status !== "done") return;
+    try {
+      await launchApp(state.info.package);
+    } catch (error) {
+      dispatch({ type: "failed", message: formatError(error) });
+    }
+  }, [state]);
 
   return (
     <div className="view">
@@ -118,9 +127,24 @@ export function InstallView({ onInstalled }: InstallViewProps) {
         <section className="result result--success">
           <h2>{state.info.package} est installé</h2>
           <p>Version {state.info.version}. Tu le retrouveras dans « Mes paquets ».</p>
-          <button type="button" className="button button--primary" onClick={reset}>
-            Installer un autre paquet
-          </button>
+          <div className="result__actions">
+            {state.launchable ? (
+              <>
+                <button type="button" className="button button--primary" onClick={launch}>
+                  Ouvrir l'application
+                </button>
+                <button type="button" className="button button--ghost" onClick={reset}>
+                  Installer un autre paquet
+                </button>
+              </>
+            ) : (
+              // Un paquet en ligne de commande n'a rien à ouvrir : inutile
+              // d'afficher un bouton qui ne mènerait nulle part.
+              <button type="button" className="button button--primary" onClick={reset}>
+                Installer un autre paquet
+              </button>
+            )}
+          </div>
         </section>
       )}
 

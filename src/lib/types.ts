@@ -23,6 +23,8 @@ export interface ManagedPackage {
 export interface OperationResult {
   package: string;
   version: string;
+  /** Vrai si le paquet installe une application que Debload peut ouvrir. */
+  launchable: boolean;
 }
 
 export interface LogLine {

@@ -3,13 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // vi.mock est hoisté au-dessus des déclarations : les mocks doivent naître
 // dans vi.hoisted pour exister au moment où les factories s'exécutent.
-const { inspectDeb, installDeb, onDragDropEvent, listen, openDialog } = vi.hoisted(() => ({
-  inspectDeb: vi.fn(),
-  installDeb: vi.fn(),
-  onDragDropEvent: vi.fn(),
-  listen: vi.fn(),
-  openDialog: vi.fn(),
-}));
+const { inspectDeb, installDeb, launchApp, onDragDropEvent, listen, openDialog } = vi.hoisted(
+  () => ({
+    inspectDeb: vi.fn(),
+    installDeb: vi.fn(),
+    launchApp: vi.fn(),
+    onDragDropEvent: vi.fn(),
+    listen: vi.fn(),
+    openDialog: vi.fn(),
+  }),
+);
 
 vi.mock("../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../lib/api")>("../lib/api");
@@ -17,6 +20,7 @@ vi.mock("../lib/api", async () => {
     ...actual,
     inspectDeb: (p: string) => inspectDeb(p),
     installDeb: (p: string) => installDeb(p),
+    launchApp: (n: string) => launchApp(n),
   };
 });
 vi.mock("@tauri-apps/api/webview", () => ({
@@ -85,6 +89,38 @@ describe("InstallView", () => {
 
     await waitFor(() => expect(screen.getByText(/un seul fichier/i)).toBeTruthy());
     expect(inspectDeb).not.toHaveBeenCalled();
+  });
+
+  it("propose d'ouvrir l'application installée", async () => {
+    inspectDeb.mockResolvedValue(info);
+    installDeb.mockResolvedValue({ package: "code", version: "1.104.2", launchable: true });
+    launchApp.mockResolvedValue(undefined);
+    const handler = captureDropHandler();
+
+    render(<InstallView onInstalled={() => {}} />);
+    await waitFor(() => expect(handler.current).toBeDefined());
+    act(() => handler.current!({ payload: { type: "drop", paths: ["/home/baptiste/code.deb"] } }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /^installer$/i }));
+
+    const openButton = await screen.findByRole("button", { name: /ouvrir l'application/i });
+    fireEvent.click(openButton);
+    await waitFor(() => expect(launchApp).toHaveBeenCalledWith("code"));
+  });
+
+  it("n'offre pas d'ouvrir un paquet en ligne de commande", async () => {
+    inspectDeb.mockResolvedValue(info);
+    installDeb.mockResolvedValue({ package: "code", version: "1.104.2", launchable: false });
+    const handler = captureDropHandler();
+
+    render(<InstallView onInstalled={() => {}} />);
+    await waitFor(() => expect(handler.current).toBeDefined());
+    act(() => handler.current!({ payload: { type: "drop", paths: ["/home/baptiste/code.deb"] } }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /^installer$/i }));
+
+    await screen.findByRole("button", { name: /installer un autre paquet/i });
+    expect(screen.queryByRole("button", { name: /ouvrir l'application/i })).toBeNull();
   });
 
   it("présente une annulation d'authentification sans alarmer", async () => {

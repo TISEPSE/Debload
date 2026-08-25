@@ -48,9 +48,19 @@ describe("installReducer", () => {
   it("conserve le journal en arrivant à done", () => {
     let state = installReducer({ status: "ready", info }, { type: "install_started" });
     state = installReducer(state, { type: "log", line: { stream: "stdout", line: "un" } });
-    state = installReducer(state, { type: "install_succeeded" });
+    state = installReducer(state, { type: "install_succeeded", launchable: true });
     expect(state.status).toBe("done");
     expect("logs" in state && state.logs).toHaveLength(1);
+  });
+
+  it("retient si le paquet installé est ouvrable", () => {
+    const started = installReducer({ status: "ready", info }, { type: "install_started" });
+
+    const gui = installReducer(started, { type: "install_succeeded", launchable: true });
+    expect(gui).toMatchObject({ status: "done", launchable: true });
+
+    const cli = installReducer(started, { type: "install_succeeded", launchable: false });
+    expect(cli).toMatchObject({ status: "done", launchable: false });
   });
 
   it("conserve le journal en cas d'échec", () => {

@@ -9,12 +9,16 @@ use crate::error::{classify_failure, DebloadError};
 use crate::history::{self, HistoryEntry};
 use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
-use crate::progress::{parse_status_line, ProgressEvent};
+use crate::privileged::PrivilegedApt;
+use crate::progress::ProgressEvent;
 use crate::runner::CommandRunner;
 
 /// État partagé injecté par Tauri dans chaque commande.
 pub struct AppState {
+    /// Commandes de lecture, sans privilèges : dpkg-deb, dpkg-query, dpkg -L.
     pub runner: Arc<dyn CommandRunner>,
+    /// Les deux seules opérations qui exigent root.
+    pub apt: Arc<dyn PrivilegedApt>,
     pub history_path: PathBuf,
 }
 
@@ -42,20 +46,6 @@ pub enum OutputEvent {
     Progress(ProgressEvent),
     /// Sortie textuelle ordinaire, conservée pour le diagnostic d'un échec.
     Log { stream: String, line: String },
-}
-
-/// Trie chaque ligne : statut d'apt d'un côté, texte courant de l'autre.
-///
-/// Le flux de statut n'arrive que sur stdout ; une ligne de stderr qui en
-/// aurait la forme reste du texte.
-fn route_output(stream: &str, line: &str, sink: &dyn Fn(OutputEvent)) {
-    if stream == "stdout" {
-        if let Some(event) = parse_status_line(line) {
-            sink(OutputEvent::Progress(event));
-            return;
-        }
-    }
-    sink(OutputEvent::Log { stream: stream.to_string(), line: line.to_string() });
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -98,6 +88,7 @@ pub fn inspect(runner: &dyn CommandRunner, path: &str) -> Result<DebInfo, Debloa
 /// Les arguments restent séparés : aucun shell n'interprète quoi que ce soit.
 pub fn install(
     runner: &dyn CommandRunner,
+    apt: &dyn PrivilegedApt,
     history_path: &Path,
     path: &str,
     sink: &dyn Fn(OutputEvent),
@@ -109,21 +100,7 @@ pub fn install(
         .to_str()
         .ok_or_else(|| DebloadError::FileNotFound(path.to_string()))?;
 
-    let out = runner.run_streaming(
-        "pkexec",
-        &[
-            "/usr/bin/env",
-            "DEBIAN_FRONTEND=noninteractive",
-            "APT_LISTCHANGES_FRONTEND=none",
-            "/usr/bin/apt-get",
-            "-o",
-            "APT::Status-Fd=1",
-            "install",
-            "-y",
-            path_str,
-        ],
-        &|stream, line| route_output(stream, line, sink),
-    )?;
+    let out = apt.install(path_str, sink)?;
 
     if !out.success() {
         // apt écrit parfois ses diagnostics sur stdout ; on remonte ce qui existe.
@@ -203,6 +180,7 @@ pub fn list(
 /// l'historique, et dpkg ne doit pas le considérer comme indispensable.
 pub fn remove_package(
     runner: &dyn CommandRunner,
+    apt: &dyn PrivilegedApt,
     history_path: &Path,
     name: &str,
     purge: bool,
@@ -219,22 +197,7 @@ pub fn remove_package(
         return Err(DebloadError::ProtectedPackage(name.to_string()));
     }
 
-    let action = if purge { "purge" } else { "remove" };
-
-    let out = runner.run_streaming(
-        "pkexec",
-        &[
-            "/usr/bin/env",
-            "DEBIAN_FRONTEND=noninteractive",
-            "/usr/bin/apt-get",
-            "-o",
-            "APT::Status-Fd=1",
-            action,
-            "-y",
-            name,
-        ],
-        &|stream, line| route_output(stream, line, sink),
-    )?;
+    let out = apt.remove(name, purge, sink)?;
 
     if !out.success() {
         let detail = if out.stderr.trim().is_empty() { &out.stdout } else { &out.stderr };
@@ -268,6 +231,7 @@ pub async fn install_deb(
     state: State<'_, AppState>,
 ) -> Result<OperationResult, DebloadError> {
     let runner = state.runner.clone();
+    let apt = state.apt.clone();
     let history_path = state.history_path.clone();
 
     // apt peut travailler plusieurs minutes : l'exécution part sur un thread
@@ -281,7 +245,7 @@ pub async fn install_deb(
                 let _ = app.emit("install-log", LogLine { stream, line });
             }
         };
-        install(runner.as_ref(), &history_path, &path, &emit)
+        install(runner.as_ref(), apt.as_ref(), &history_path, &path, &emit)
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
@@ -306,6 +270,7 @@ pub async fn uninstall(
     state: State<'_, AppState>,
 ) -> Result<OperationResult, DebloadError> {
     let runner = state.runner.clone();
+    let apt = state.apt.clone();
     let history_path = state.history_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
@@ -317,7 +282,7 @@ pub async fn uninstall(
                 let _ = app.emit("uninstall-log", LogLine { stream, line });
             }
         };
-        remove_package(runner.as_ref(), &history_path, &name, purge, &emit)
+        remove_package(runner.as_ref(), apt.as_ref(), &history_path, &name, purge, &emit)
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
@@ -414,10 +379,10 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
-        let result = install(&fake, &hist, &deb, &|_| {}).unwrap();
+        let result = install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
         assert_eq!(result.package, "code");
         assert_eq!(result.version, "1.104.2");
 
@@ -436,14 +401,14 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
-        install(&fake, &hist, &deb, &|_| {}).unwrap();
+        install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
 
         let privileged = fake
             .calls()
             .into_iter()
-            .find(|c| c[0] == "pkexec")
+            .find(|c| c[0] == "/usr/bin/apt-get")
             .expect("une commande privilégiée doit avoir été lancée");
 
         assert!(privileged.contains(&"/usr/bin/apt-get".to_string()));
@@ -463,11 +428,11 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
         let seen = std::sync::Mutex::new(Vec::new());
-        install(&fake, &hist, &deb, &|event| {
+        install(&fake, &fake, &hist, &deb, &|event| {
             seen.lock().unwrap().push(event);
         })
         .unwrap();
@@ -498,11 +463,11 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], mixed);
+        fake.on(&["apt-get"], mixed);
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
         let events = std::sync::Mutex::new(Vec::new());
-        install(&fake, &hist, &deb, &|event| events.lock().unwrap().push(event)).unwrap();
+        install(&fake, &fake, &hist, &deb, &|event| events.lock().unwrap().push(event)).unwrap();
 
         let events = events.lock().unwrap();
         let progress: Vec<_> = events
@@ -537,11 +502,11 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
-        install(&fake, &hist, &deb, &|_| {}).unwrap();
+        install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
 
-        let call = fake.calls().into_iter().find(|c| c[0] == "pkexec").unwrap();
+        let call = fake.calls().into_iter().find(|c| c[0] == "/usr/bin/apt-get").unwrap();
         assert!(
             call.contains(&"APT::Status-Fd=1".to_string()),
             "sans cette option apt ne rapporte aucun avancement : {call:?}"
@@ -556,9 +521,9 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], CommandOutput::fail(126, ""));
+        fake.on(&["apt-get"], CommandOutput::fail(126, ""));
 
-        let err = install(&fake, &hist, &deb, &|_| {}).unwrap_err();
+        let err = install(&fake, &fake, &hist, &deb, &|_| {}).unwrap_err();
         assert_eq!(err, DebloadError::AuthCancelled);
         assert!(crate::history::load(&hist).entries.is_empty());
     }
@@ -572,7 +537,7 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
         fake.on(
-            &["pkexec"],
+            &["apt-get"],
             CommandOutput {
                 status: Some(100),
                 stdout: "E: dépendance introuvable libfoo".to_string(),
@@ -580,7 +545,7 @@ mod tests {
             },
         );
 
-        let err = install(&fake, &hist, &deb, &|_| {}).unwrap_err();
+        let err = install(&fake, &fake, &hist, &deb, &|_| {}).unwrap_err();
         match err {
             DebloadError::CommandFailed(msg) => assert!(msg.contains("libfoo")),
             other => panic!("attendu CommandFailed, obtenu {other:?}"),
@@ -595,11 +560,11 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
-        install(&fake, &hist, &deb, &|_| {}).unwrap();
-        install(&fake, &hist, &deb, &|_| {}).unwrap();
+        install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
+        install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
 
         assert_eq!(crate::history::load(&hist).entries.len(), 1);
     }
@@ -618,10 +583,10 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok(desktop.to_str().unwrap()));
 
-        let result = install(&fake, &hist, &deb, &|_| {}).unwrap();
+        let result = install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
         assert!(result.launchable);
     }
 
@@ -633,10 +598,10 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["pkexec"], ok_install());
+        fake.on(&["apt-get"], ok_install());
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/outil\n"));
 
-        let result = install(&fake, &hist, &deb, &|_| {}).unwrap();
+        let result = install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
         assert!(!result.launchable);
     }
 
@@ -714,9 +679,9 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
-        fake.on(&["pkexec"], CommandOutput::ok("Suppression de code...\n"));
+        fake.on(&["apt-get"], CommandOutput::ok("Suppression de code...\n"));
 
-        let result = remove_package(&fake, &hist, "code", false, &|_| {}).unwrap();
+        let result = remove_package(&fake, &fake, &hist, "code", false, &|_| {}).unwrap();
         assert_eq!(result.package, "code");
         assert!(crate::history::load(&hist).entries.is_empty());
     }
@@ -730,11 +695,11 @@ mod tests {
             seed_history(&hist, &["code"]);
             let fake = FakeRunner::new();
             fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
-            fake.on(&["pkexec"], CommandOutput::ok(""));
+            fake.on(&["apt-get"], CommandOutput::ok(""));
 
-            remove_package(&fake, &hist, "code", purge, &|_| {}).unwrap();
+            remove_package(&fake, &fake, &hist, "code", purge, &|_| {}).unwrap();
 
-            let call = fake.calls().into_iter().find(|c| c[0] == "pkexec").unwrap();
+            let call = fake.calls().into_iter().find(|c| c[0] == "/usr/bin/apt-get").unwrap();
             assert!(call.contains(&expected.to_string()), "attendu {expected} dans {call:?}");
         }
     }
@@ -746,7 +711,7 @@ mod tests {
         seed_history(&hist, &["code"]);
 
         let fake = FakeRunner::new();
-        let err = remove_package(&fake, &hist, "firefox", false, &|_| {}).unwrap_err();
+        let err = remove_package(&fake, &fake, &hist, "firefox", false, &|_| {}).unwrap_err();
 
         assert!(matches!(err, DebloadError::NotManaged(_)));
         assert!(fake.calls().is_empty(), "rien ne doit être exécuté");
@@ -761,10 +726,10 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["Essential", "bash"], CommandOutput::ok("yes|required"));
 
-        let err = remove_package(&fake, &hist, "bash", false, &|_| {}).unwrap_err();
+        let err = remove_package(&fake, &fake, &hist, "bash", false, &|_| {}).unwrap_err();
         assert!(matches!(err, DebloadError::ProtectedPackage(_)));
 
-        assert!(!fake.calls().iter().any(|c| c[0] == "pkexec"));
+        assert!(!fake.calls().iter().any(|c| c[0] == "/usr/bin/apt-get"));
         assert!(crate::history::load(&hist).contains("bash"));
     }
 
@@ -775,7 +740,7 @@ mod tests {
         seed_history(&hist, &["code"]);
 
         let fake = FakeRunner::new();
-        let err = remove_package(&fake, &hist, "--purge -y bash", false, &|_| {}).unwrap_err();
+        let err = remove_package(&fake, &fake, &hist, "--purge -y bash", false, &|_| {}).unwrap_err();
 
         assert!(matches!(err, DebloadError::InvalidPackageName(_)));
         assert!(fake.calls().is_empty());
@@ -789,9 +754,9 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
-        fake.on(&["pkexec"], CommandOutput::fail(126, ""));
+        fake.on(&["apt-get"], CommandOutput::fail(126, ""));
 
-        let err = remove_package(&fake, &hist, "code", false, &|_| {}).unwrap_err();
+        let err = remove_package(&fake, &fake, &hist, "code", false, &|_| {}).unwrap_err();
         assert_eq!(err, DebloadError::AuthCancelled);
         assert!(crate::history::load(&hist).contains("code"));
     }

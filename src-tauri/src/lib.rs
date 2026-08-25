@@ -4,6 +4,7 @@ pub mod error;
 pub mod history;
 pub mod launch;
 pub mod pkg;
+pub mod privileged;
 pub mod progress;
 pub mod runner;
 
@@ -12,6 +13,7 @@ use std::sync::Arc;
 use tauri::Manager;
 
 use commands::AppState;
+use privileged::HelperSession;
 use runner::RealRunner;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -22,6 +24,7 @@ pub fn run() {
             let data_dir = app.path().app_data_dir()?;
             app.manage(AppState {
                 runner: Arc::new(RealRunner),
+                apt: Arc::new(HelperSession::new()),
                 history_path: data_dir.join("history.json"),
             });
             Ok(())

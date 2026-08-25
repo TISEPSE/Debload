@@ -202,6 +202,52 @@ impl CommandRunner for FakeRunner {
     }
 }
 
+impl crate::privileged::PrivilegedApt for FakeRunner {
+    fn install(
+        &self,
+        path: &str,
+        sink: &dyn Fn(crate::commands::OutputEvent),
+    ) -> Result<CommandOutput, DebloadError> {
+        self.fake_apt(&crate::privileged::HelperRequest::Install { path: path.to_string() }, sink)
+    }
+
+    fn remove(
+        &self,
+        name: &str,
+        purge: bool,
+        sink: &dyn Fn(crate::commands::OutputEvent),
+    ) -> Result<CommandOutput, DebloadError> {
+        self.fake_apt(
+            &crate::privileged::HelperRequest::Remove { name: name.to_string(), purge },
+            sink,
+        )
+    }
+}
+
+impl FakeRunner {
+    /// Rejoue une opération privilégiée comme le ferait le processus root :
+    /// même ligne de commande apt, même tri des lignes de sortie.
+    fn fake_apt(
+        &self,
+        request: &crate::privileged::HelperRequest,
+        sink: &dyn Fn(crate::commands::OutputEvent),
+    ) -> Result<CommandOutput, DebloadError> {
+        let args = crate::privileged::apt_args(request);
+        let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+
+        self.run_streaming("/usr/bin/apt-get", &borrowed, &|stream, line| {
+            let event = match crate::progress::parse_status_line(line) {
+                Some(p) if stream == "stdout" => crate::commands::OutputEvent::Progress(p),
+                _ => crate::commands::OutputEvent::Log {
+                    stream: stream.to_string(),
+                    line: line.to_string(),
+                },
+            };
+            sink(event);
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

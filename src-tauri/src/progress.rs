@@ -11,9 +11,9 @@
 //! Ce sont elles qui alimentent la barre de progression : la progression
 //! affichée vient d'apt, elle n'est pas simulée.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProgressPhase {
     /// Récupération des paquets manquants depuis le réseau.
@@ -26,7 +26,7 @@ pub enum ProgressPhase {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgressEvent {
     pub phase: ProgressPhase,

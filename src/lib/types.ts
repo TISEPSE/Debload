@@ -27,6 +27,15 @@ export interface OperationResult {
   launchable: boolean;
 }
 
+export type ProgressPhase = "download" | "install" | "confFile" | "error";
+
+/** Avancement réel rapporté par apt. */
+export interface ProgressEvent {
+  phase: ProgressPhase;
+  percent: number;
+  message: string;
+}
+
 export interface LogLine {
   stream: "stdout" | "stderr";
   line: string;

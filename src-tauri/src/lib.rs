@@ -4,6 +4,7 @@ pub mod error;
 pub mod history;
 pub mod launch;
 pub mod pkg;
+pub mod progress;
 pub mod runner;
 
 use std::sync::Arc;

@@ -400,3 +400,87 @@ body {
   gap: 10px;
   margin-top: 4px;
 }
+
+/* Barre de progression */
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progress__label {
+  color: var(--text-dim);
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress__percent {
+  color: var(--text);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.progress__track {
+  height: 8px;
+  overflow: hidden;
+  background: var(--surface-raised);
+  border-radius: 999px;
+}
+
+.progress__fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.25s ease-out;
+}
+
+/* Tant qu'apt n'a rien rapporté, la barre s'anime sans afficher de
+   pourcentage : elle indique une activité, pas un avancement. */
+.progress__track--indeterminate .progress__fill {
+  width: 35%;
+  transition: none;
+  animation: progress-sweep 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress__track--indeterminate .progress__fill {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}
+
+/* Détails repliés */
+.details {
+  margin: 12px 0;
+}
+
+.details summary {
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.details summary:hover {
+  color: var(--text);
+}

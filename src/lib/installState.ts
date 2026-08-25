@@ -1,10 +1,10 @@
-import type { DebInfo, LogLine } from "./types";
+import type { DebInfo, LogLine, ProgressEvent } from "./types";
 
 export type InstallState =
   | { status: "idle" }
   | { status: "inspecting"; path: string }
   | { status: "ready"; info: DebInfo }
-  | { status: "installing"; info: DebInfo; logs: LogLine[] }
+  | { status: "installing"; info: DebInfo; logs: LogLine[]; progress: ProgressEvent | null }
   | { status: "done"; info: DebInfo; logs: LogLine[]; launchable: boolean }
   | { status: "error"; message: string; logs: LogLine[] };
 
@@ -13,6 +13,7 @@ export type InstallAction =
   | { type: "inspected"; info: DebInfo }
   | { type: "install_started" }
   | { type: "log"; line: LogLine }
+  | { type: "progress"; event: ProgressEvent }
   | { type: "install_succeeded"; launchable: boolean }
   | { type: "failed"; message: string }
   | { type: "reset" };
@@ -30,7 +31,7 @@ export function installReducer(state: InstallState, action: InstallAction): Inst
 
     case "install_started":
       return state.status === "ready"
-        ? { status: "installing", info: state.info, logs: [] }
+        ? { status: "installing", info: state.info, logs: [], progress: null }
         : state;
 
     case "log":
@@ -38,6 +39,13 @@ export function installReducer(state: InstallState, action: InstallAction): Inst
       // tardif ne doit pas ressusciter un écran déjà refermé.
       return state.status === "installing"
         ? { ...state, logs: [...state.logs, action.line] }
+        : state;
+
+    case "progress":
+      // Comme pour les lignes de journal, un avancement tardif ne doit pas
+      // rouvrir un écran déjà refermé.
+      return state.status === "installing"
+        ? { ...state, progress: action.event }
         : state;
 
     case "install_succeeded":

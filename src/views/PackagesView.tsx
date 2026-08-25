@@ -3,8 +3,9 @@ import { listen } from "@tauri-apps/api/event";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LogPanel } from "../components/LogPanel";
+import { ProgressBar } from "../components/ProgressBar";
 import { formatError, listManaged, uninstall } from "../lib/api";
-import type { LogLine, ManagedPackage } from "../lib/types";
+import type { LogLine, ManagedPackage, ProgressEvent } from "../lib/types";
 
 interface PackagesViewProps {
   /** Incrémenté par le parent après une installation, pour forcer un rechargement. */
@@ -25,6 +26,7 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
   const [pending, setPending] = useState<ManagedPackage | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [logs, setLogs] = useState<LogLine[]>([]);
+  const [progress, setProgress] = useState<ProgressEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -43,6 +45,18 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
     void reload();
   }, [reload, refreshToken]);
 
+  // Avancement réel rapporté par apt.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen<ProgressEvent>("uninstall-progress", (event) => {
+      setProgress(event.payload);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, []);
+
+  // Sortie textuelle, gardée pour expliquer un échec.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     listen<LogLine>("uninstall-log", (event) => {
@@ -60,6 +74,7 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
       setPending(null);
       setBusy(name);
       setLogs([]);
+      setProgress(null);
       setError(null);
       try {
         await uninstall(name, purge);
@@ -77,7 +92,21 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
 
   return (
     <div className="view">
-      {error && <p className="result result--error">{error}</p>}
+      {error && (
+        <section className="result result--error">
+          <p>{error}</p>
+          {logs.length > 0 && (
+            <details className="details">
+              <summary>Voir la sortie d'apt</summary>
+              <LogPanel logs={logs} />
+            </details>
+          )}
+        </section>
+      )}
+
+      {busy !== null && (
+        <ProgressBar progress={progress} fallbackLabel={`Suppression de ${busy}…`} />
+      )}
 
       {packages.length === 0 ? (
         <p className="empty">
@@ -119,8 +148,6 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
           onCancel={() => setPending(null)}
         />
       )}
-
-      <LogPanel logs={logs} />
     </div>
   );
 }

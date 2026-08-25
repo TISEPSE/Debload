@@ -32,9 +32,33 @@ describe("installReducer", () => {
     expect(next).toEqual({ status: "ready", info });
   });
 
-  it("démarre l'installation avec un journal vide", () => {
+  it("démarre l'installation sans avancement connu", () => {
     const next = installReducer({ status: "ready", info }, { type: "install_started" });
-    expect(next).toEqual({ status: "installing", info, logs: [] });
+    expect(next).toEqual({ status: "installing", info, logs: [], progress: null });
+  });
+
+  it("retient le dernier avancement rapporté par apt", () => {
+    let state = installReducer({ status: "ready", info }, { type: "install_started" });
+    state = installReducer(state, {
+      type: "progress",
+      event: { phase: "download", percent: 4.9882, message: "Téléchargement" },
+    });
+    state = installReducer(state, {
+      type: "progress",
+      event: { phase: "install", percent: 66.6, message: "Dépaquetage de code" },
+    });
+    expect(state).toMatchObject({
+      status: "installing",
+      progress: { phase: "install", percent: 66.6, message: "Dépaquetage de code" },
+    });
+  });
+
+  it("ignore un avancement reçu hors installation", () => {
+    const state = installReducer(initialInstallState, {
+      type: "progress",
+      event: { phase: "install", percent: 50, message: "tardif" },
+    });
+    expect(state).toEqual(initialInstallState);
   });
 
   it("accumule les lignes de journal dans l'ordre", () => {

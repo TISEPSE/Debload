@@ -5,10 +5,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 
 import { DropZone } from "../components/DropZone";
 import { LogPanel } from "../components/LogPanel";
+import { ProgressBar } from "../components/ProgressBar";
 import { PackageCard } from "../components/PackageCard";
 import { formatError, inspectDeb, installDeb, launchApp } from "../lib/api";
 import { initialInstallState, installReducer } from "../lib/installState";
-import type { LogLine } from "../lib/types";
+import type { LogLine, ProgressEvent } from "../lib/types";
 
 interface InstallViewProps {
   /** Appelé après une installation réussie, pour rafraîchir la liste. */
@@ -61,7 +62,21 @@ export function InstallView({ onInstalled }: InstallViewProps) {
     return () => unlisten?.();
   }, [handleFile]);
 
-  // Journal d'installation diffusé par le backend.
+  // Avancement réel rapporté par apt.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+
+    listen<ProgressEvent>("install-progress", (event) => {
+      dispatch({ type: "progress", event: event.payload });
+    }).then((fn) => {
+      unlisten = fn;
+    });
+
+    return () => unlisten?.();
+  }, []);
+
+  // Sortie textuelle d'apt : conservée pour expliquer un échec, jamais
+  // affichée quand tout se passe bien.
   useEffect(() => {
     let unlisten: (() => void) | undefined;
 
@@ -123,6 +138,10 @@ export function InstallView({ onInstalled }: InstallViewProps) {
         />
       )}
 
+      {state.status === "installing" && (
+        <ProgressBar progress={state.progress} fallbackLabel="Préparation…" />
+      )}
+
       {state.status === "done" && (
         <section className="result result--success">
           <h2>{state.info.package} est installé</h2>
@@ -152,13 +171,17 @@ export function InstallView({ onInstalled }: InstallViewProps) {
         <section className="result result--error">
           <h2>Installation interrompue</h2>
           <p>{state.message}</p>
+          {state.logs.length > 0 && (
+            <details className="details">
+              <summary>Voir la sortie d'apt</summary>
+              <LogPanel logs={state.logs} />
+            </details>
+          )}
           <button type="button" className="button button--ghost" onClick={reset}>
             Recommencer
           </button>
         </section>
       )}
-
-      {"logs" in state && <LogPanel logs={state.logs} />}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { InstallView } from "./views/InstallView";
 import { PackagesView } from "./views/PackagesView";
 import { ReposView } from "./views/ReposView";
 
-type Tab = "install" | "repos" | "packages";
+type Tab = "install" | "packages" | "repos";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("install");
@@ -32,28 +32,28 @@ export default function App() {
           <button
             type="button"
             role="tab"
-            aria-selected={tab === "repos"}
-            className={`tabs__tab${tab === "repos" ? " tabs__tab--active" : ""}`}
-            onClick={() => setTab("repos")}
-          >
-            Dépôts
-          </button>
-          <button
-            type="button"
-            role="tab"
             aria-selected={tab === "packages"}
             className={`tabs__tab${tab === "packages" ? " tabs__tab--active" : ""}`}
             onClick={() => setTab("packages")}
           >
             Mes paquets
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "repos"}
+            className={`tabs__tab${tab === "repos" ? " tabs__tab--active" : ""}`}
+            onClick={() => setTab("repos")}
+          >
+            Dépôts
+          </button>
         </nav>
       </header>
 
       <main className="app__main">
         {tab === "install" && <InstallView onInstalled={handleInstalled} />}
-        {tab === "repos" && <ReposView onInstalled={handleInstalled} />}
         {tab === "packages" && <PackagesView refreshToken={refreshToken} />}
+        {tab === "repos" && <ReposView onInstalled={handleInstalled} />}
       </main>
     </div>
   );

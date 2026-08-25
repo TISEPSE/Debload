@@ -126,11 +126,13 @@ pub fn select_deb_assets(assets: &[Asset], arch: &str) -> Vec<Asset> {
         return debs;
     }
 
+    // Les projets orthographient l'architecture comme ils veulent : LocalSend
+    // publie « linux-x86-64.deb » là où d'autres écrivent « amd64 ».
     let aliases: &[&str] = match arch {
-        "amd64" => &["amd64", "x86_64", "x64"],
-        "arm64" => &["arm64", "aarch64"],
-        "armhf" => &["armhf", "armv7"],
-        "i386" => &["i386", "i686", "x86"],
+        "amd64" => &["amd64", "x86_64", "x86-64", "x64"],
+        "arm64" => &["arm64", "aarch64", "arm-64"],
+        "armhf" => &["armhf", "armv7", "arm-32"],
+        "i386" => &["i386", "i686", "x86-32"],
         other => return keep_matching(&debs, &[other]).unwrap_or(debs),
     };
 
@@ -440,6 +442,25 @@ mod tests {
         let assets = vec![asset("app-x86_64.deb"), asset("app-aarch64.deb")];
         assert_eq!(select_deb_assets(&assets, "amd64")[0].name, "app-x86_64.deb");
         assert_eq!(select_deb_assets(&assets, "arm64")[0].name, "app-aarch64.deb");
+    }
+
+    #[test]
+    fn picks_the_right_deb_among_localsends_two() {
+        // Noms réels de la release v1.18.2 de localsend/localsend : ni
+        // « amd64 » ni « x86_64 », mais « x86-64 ».
+        let assets = vec![
+            asset("LocalSend-1.18.2-linux-arm-64.deb"),
+            asset("LocalSend-1.18.2-linux-x86-64.deb"),
+        ];
+
+        let chosen = select_deb_assets(&assets, "amd64");
+        assert_eq!(chosen.len(), 1, "aucun choix à demander pour LocalSend");
+        assert_eq!(chosen[0].name, "LocalSend-1.18.2-linux-x86-64.deb");
+
+        assert_eq!(
+            select_deb_assets(&assets, "arm64")[0].name,
+            "LocalSend-1.18.2-linux-arm-64.deb"
+        );
     }
 
     #[test]

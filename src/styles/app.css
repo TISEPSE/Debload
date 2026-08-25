@@ -6,6 +6,8 @@
   --text: #e8eaed;
   --text-dim: #9aa0aa;
   --accent: #e95420; /* orange Ubuntu */
+  --accent-hover: #f0663a;
+  --accent-strong: #cc4416;
   --danger: #c0392b;
   --danger-strong: #a53226;
   --success: #2e9e5b;
@@ -66,6 +68,17 @@ body {
   color: var(--text-dim);
   font: inherit;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tabs__tab:hover {
+  color: var(--text);
+}
+
+.tabs__tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px;
 }
 
 .tabs__tab--active {
@@ -201,10 +214,39 @@ body {
   color: #fff;
 }
 
+.button--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.button--primary:active:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.button--primary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .button--ghost {
   background: transparent;
   border-color: var(--border);
   color: var(--text);
+}
+
+/* Le bouton secondaire se contente de prendre du relief : il ne doit pas
+   rivaliser avec l'action principale posée à côté. */
+.button--ghost:hover:not(:disabled) {
+  background: var(--surface-raised);
+  border-color: var(--text-dim);
+}
+
+.button--ghost:active:not(:disabled) {
+  background: var(--border);
+}
+
+.button--ghost:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .button--danger {

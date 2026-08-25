@@ -29,6 +29,96 @@
       "repo": "memos",
       "label": "Memos",
       "description": "Open-source, self-hosted note-taking tool built for quick capture. Markdown-native, lightweight, and fully…"
+    },
+    {
+      "owner": "rustdesk",
+      "repo": "rustdesk",
+      "label": "RustDesk",
+      "description": "An open-source remote desktop application designed for self-hosting, as an alternative to TeamViewer."
+    },
+    {
+      "owner": "Heroic-Games-Launcher",
+      "repo": "HeroicGamesLauncher",
+      "label": "Heroic Games Launcher",
+      "description": "A games launcher for GOG, Amazon and Epic Games for Linux, Windows and macOS."
+    },
+    {
+      "owner": "cryptomator",
+      "repo": "cryptomator",
+      "label": "Cryptomator",
+      "description": "Cryptomator for Windows, macOS, and Linux: Secure client-side encryption for your cloud storage, ensuring p…"
+    },
+    {
+      "owner": "Eugeny",
+      "repo": "tabby",
+      "label": "Tabby",
+      "description": "A terminal for a more modern age"
+    },
+    {
+      "owner": "upscayl",
+      "repo": "upscayl",
+      "label": "Upscayl",
+      "description": "🆙 Upscayl - #1 Free and Open Source AI Image Upscaler for Linux, MacOS and Windows."
+    },
+    {
+      "owner": "th-ch",
+      "repo": "youtube-music",
+      "label": "YouTube Music",
+      "description": "Pear 🍐 is extension for music player"
+    },
+    {
+      "owner": "KRTirtho",
+      "repo": "spotube",
+      "label": "Spotube",
+      "description": "🎧 Open source music streaming app! Available for both desktop & mobile!"
+    },
+    {
+      "owner": "nukeop",
+      "repo": "nuclear",
+      "label": "Nuclear",
+      "description": "Streaming music player that finds free music for you"
+    },
+    {
+      "owner": "jeffvli",
+      "repo": "feishin",
+      "label": "Feishin",
+      "description": "A modern self-hosted music player."
+    },
+    {
+      "owner": "agalwood",
+      "repo": "Motrix",
+      "label": "Motrix",
+      "description": "A full-featured download manager."
+    },
+    {
+      "owner": "pot-app",
+      "repo": "pot-desktop",
+      "label": "Pot",
+      "description": "🌈一个跨平台的划词翻译和OCR软件 | A cross-platform software for text translation and recognition."
+    },
+    {
+      "owner": "janhq",
+      "repo": "jan",
+      "label": "Jan",
+      "description": "Jan is an open source alternative to ChatGPT that runs 100% offline on your computer."
+    },
+    {
+      "owner": "ferdium",
+      "repo": "ferdium-app",
+      "label": "Ferdium",
+      "description": "All your services in one place, built by the community"
+    },
+    {
+      "owner": "mattermost",
+      "repo": "desktop",
+      "label": "Mattermost",
+      "description": "Mattermost Desktop application for Windows, Mac and Linux"
+    },
+    {
+      "owner": "netbirdio",
+      "repo": "netbird",
+      "label": "NetBird",
+      "description": "Connect your devices into a secure WireGuard®-based overlay network with SSO, MFA and granular access contr…"
     }
   ]
 }

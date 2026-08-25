@@ -19,12 +19,20 @@ impl CommandOutput {
 
     /// Raccourci de test : une sortie réussie portant `stdout`.
     pub fn ok(stdout: &str) -> Self {
-        Self { status: Some(0), stdout: stdout.to_string(), stderr: String::new() }
+        Self {
+            status: Some(0),
+            stdout: stdout.to_string(),
+            stderr: String::new(),
+        }
     }
 
     /// Raccourci de test : un échec portant un code et `stderr`.
     pub fn fail(code: i32, stderr: &str) -> Self {
-        Self { status: Some(code), stdout: String::new(), stderr: stderr.to_string() }
+        Self {
+            status: Some(code),
+            stdout: String::new(),
+            stderr: stderr.to_string(),
+        }
     }
 }
 
@@ -99,7 +107,11 @@ impl CommandRunner for RealRunner {
         let mut err_buf = String::new();
         for (stream, line) in rx {
             on_line(&stream, &line);
-            let buf = if stream == "stdout" { &mut out_buf } else { &mut err_buf };
+            let buf = if stream == "stdout" {
+                &mut out_buf
+            } else {
+                &mut err_buf
+            };
             buf.push_str(&line);
             buf.push('\n');
         }
@@ -108,20 +120,31 @@ impl CommandRunner for RealRunner {
         let _ = h_err.join();
         let status = child.wait().map_err(|e| DebloadError::Io(e.to_string()))?;
 
-        Ok(CommandOutput { status: status.code(), stdout: out_buf, stderr: err_buf })
+        Ok(CommandOutput {
+            status: status.code(),
+            stdout: out_buf,
+            stderr: err_buf,
+        })
     }
 
     fn spawn_detached(&self, program: &str, args: &[&str]) -> Result<(), DebloadError> {
-        use std::os::unix::process::CommandExt;
-
-        Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            // Groupe de processus distinct : fermer Debload ne referme pas
-            // l'application qu'on vient d'ouvrir.
-            .process_group(0)
+            .stderr(Stdio::null());
+
+        // Groupe de processus distinct : fermer Debload ne referme pas
+        // l'application qu'on vient d'ouvrir. La notion n'existe que sur
+        // Unix ; ailleurs, un processus lancé est déjà indépendant.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+
+        command
             .spawn()
             .map(|_| ())
             .map_err(|e| DebloadError::Io(e.to_string()))
@@ -145,7 +168,10 @@ impl Default for FakeRunner {
 
 impl FakeRunner {
     pub fn new() -> Self {
-        Self { rules: Mutex::new(Vec::new()), calls: Mutex::new(Vec::new()) }
+        Self {
+            rules: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
+        }
     }
 
     pub fn on(&self, tokens: &[&str], output: CommandOutput) -> &Self {
@@ -165,7 +191,10 @@ impl FakeRunner {
 
         let rules = self.rules.lock().unwrap();
         for (tokens, output) in rules.iter() {
-            if tokens.iter().all(|t| call.iter().any(|c| c.contains(t.as_str()))) {
+            if tokens
+                .iter()
+                .all(|t| call.iter().any(|c| c.contains(t.as_str())))
+            {
                 return output.clone();
             }
         }
@@ -208,7 +237,12 @@ impl crate::privileged::PrivilegedApt for FakeRunner {
         path: &str,
         sink: &dyn Fn(crate::commands::OutputEvent),
     ) -> Result<CommandOutput, DebloadError> {
-        self.fake_apt(&crate::privileged::HelperRequest::Install { path: path.to_string() }, sink)
+        self.fake_apt(
+            &crate::privileged::HelperRequest::Install {
+                path: path.to_string(),
+            },
+            sink,
+        )
     }
 
     fn remove(
@@ -218,7 +252,10 @@ impl crate::privileged::PrivilegedApt for FakeRunner {
         sink: &dyn Fn(crate::commands::OutputEvent),
     ) -> Result<CommandOutput, DebloadError> {
         self.fake_apt(
-            &crate::privileged::HelperRequest::Remove { name: name.to_string(), purge },
+            &crate::privileged::HelperRequest::Remove {
+                name: name.to_string(),
+                purge,
+            },
             sink,
         )
     }
@@ -283,7 +320,9 @@ mod tests {
     fn fake_runner_matches_rule_and_records_call() {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-query", "code"], CommandOutput::ok("installed|1.0"));
-        let out = fake.run("dpkg-query", &["-W", "-f=${Version}", "code"]).unwrap();
+        let out = fake
+            .run("dpkg-query", &["-W", "-f=${Version}", "code"])
+            .unwrap();
         assert_eq!(out.stdout, "installed|1.0");
         assert_eq!(fake.calls().len(), 1);
         assert!(fake.calls()[0].contains(&"code".to_string()));

@@ -79,7 +79,8 @@ pub fn parse_repo_ref(input: &str) -> Result<RepoRef, DebloadError> {
     let valid = |s: &str| {
         !s.is_empty()
             && s.len() <= 100
-            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
             && !s.starts_with('.')
     };
 
@@ -87,7 +88,10 @@ pub fn parse_repo_ref(input: &str) -> Result<RepoRef, DebloadError> {
         return Err(invalid());
     }
 
-    Ok(RepoRef { owner: owner.to_string(), repo: repo.to_string() })
+    Ok(RepoRef {
+        owner: owner.to_string(),
+        repo: repo.to_string(),
+    })
 }
 
 /// Retire le « v » que portent la plupart des tags de version.
@@ -196,7 +200,11 @@ pub fn parse_release(body: &str) -> Result<Release, DebloadError> {
         assets: raw
             .assets
             .into_iter()
-            .map(|a| Asset { name: a.name, url: a.browser_download_url, size: a.size })
+            .map(|a| Asset {
+                name: a.name,
+                url: a.browser_download_url,
+                size: a.size,
+            })
             .collect(),
     })
 }
@@ -223,10 +231,7 @@ fn agent() -> ureq::Agent {
 }
 
 /// Interroge l'API pour la dernière release publiée d'un dépôt.
-pub fn fetch_latest_release(
-    repo: &RepoRef,
-    token: Option<&str>,
-) -> Result<Release, DebloadError> {
+pub fn fetch_latest_release(repo: &RepoRef, token: Option<&str>) -> Result<Release, DebloadError> {
     let url = format!(
         "https://api.github.com/repos/{}/{}/releases/latest",
         repo.owner, repo.repo
@@ -250,7 +255,9 @@ pub fn fetch_latest_release(
             return Err(DebloadError::GithubRateLimited);
         }
         Err(ureq::Error::StatusCode(code)) => {
-            return Err(DebloadError::GithubFailed(format!("GitHub a répondu {code}")));
+            return Err(DebloadError::GithubFailed(format!(
+                "GitHub a répondu {code}"
+            )));
         }
         Err(err) => {
             return Err(DebloadError::GithubFailed(err.to_string()));
@@ -278,7 +285,9 @@ pub fn download(
         return Err(DebloadError::UntrustedUrl(asset.url.clone()));
     }
 
-    let mut request = agent().get(&asset.url).header("Accept", "application/octet-stream");
+    let mut request = agent()
+        .get(&asset.url)
+        .header("Accept", "application/octet-stream");
     if let Some(token) = token {
         request = request.header("Authorization", &format!("Bearer {token}"));
     }
@@ -299,18 +308,22 @@ pub fn download(
         std::fs::create_dir_all(parent).map_err(|e| DebloadError::Io(e.to_string()))?;
     }
 
-    let mut file = std::fs::File::create(destination).map_err(|e| DebloadError::Io(e.to_string()))?;
+    let mut file =
+        std::fs::File::create(destination).map_err(|e| DebloadError::Io(e.to_string()))?;
     let mut reader = response.body_mut().as_reader();
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut written: u64 = 0;
     let mut last_reported = -1_i32;
 
     loop {
-        let read = reader.read(&mut buffer).map_err(|e| DebloadError::Io(e.to_string()))?;
+        let read = reader
+            .read(&mut buffer)
+            .map_err(|e| DebloadError::Io(e.to_string()))?;
         if read == 0 {
             break;
         }
-        file.write_all(&buffer[..read]).map_err(|e| DebloadError::Io(e.to_string()))?;
+        file.write_all(&buffer[..read])
+            .map_err(|e| DebloadError::Io(e.to_string()))?;
         written += read as u64;
 
         if total > 0 {
@@ -344,7 +357,10 @@ mod tests {
 
     #[test]
     fn accepts_every_shape_a_repo_reference_takes() {
-        let expected = RepoRef { owner: "TISEPSE".into(), repo: "MailFlow".into() };
+        let expected = RepoRef {
+            owner: "TISEPSE".into(),
+            repo: "MailFlow".into(),
+        };
         for input in [
             "TISEPSE/MailFlow",
             "https://github.com/TISEPSE/MailFlow",
@@ -356,13 +372,25 @@ mod tests {
             // Une URL pointant plus profond ramène quand même au dépôt.
             "https://github.com/TISEPSE/MailFlow/releases/tag/v0.1.8",
         ] {
-            assert_eq!(parse_repo_ref(input).unwrap(), expected, "échec sur {input:?}");
+            assert_eq!(
+                parse_repo_ref(input).unwrap(),
+                expected,
+                "échec sur {input:?}"
+            );
         }
     }
 
     #[test]
     fn rejects_what_is_not_a_repo() {
-        for input in ["", "MailFlow", "https://github.com/", "/", "a/", "/b", "../etc"] {
+        for input in [
+            "",
+            "MailFlow",
+            "https://github.com/",
+            "/",
+            "a/",
+            "/b",
+            "../etc",
+        ] {
             assert!(parse_repo_ref(input).is_err(), "accepté à tort : {input:?}");
         }
     }
@@ -380,14 +408,16 @@ mod tests {
         assert!(is_allowed_download_url(
             "https://github.com/o/r/releases/download/v1/x.deb"
         ));
-        assert!(is_allowed_download_url("https://objects.githubusercontent.com/x"));
+        assert!(is_allowed_download_url(
+            "https://objects.githubusercontent.com/x"
+        ));
 
         for url in [
-            "http://github.com/o/r/x.deb",              // pas de HTTPS
+            "http://github.com/o/r/x.deb", // pas de HTTPS
             "https://evil.com/x.deb",
-            "https://github.com.evil.com/x.deb",         // suffixe trompeur
+            "https://github.com.evil.com/x.deb", // suffixe trompeur
             "https://evil.com/?u=github.com",
-            "https://github.com@evil.com/x.deb",         // hôte réel après @
+            "https://github.com@evil.com/x.deb", // hôte réel après @
             "ftp://github.com/x.deb",
         ] {
             assert!(!is_allowed_download_url(url), "accepté à tort : {url}");
@@ -440,8 +470,14 @@ mod tests {
     #[test]
     fn understands_the_usual_architecture_spellings() {
         let assets = vec![asset("app-x86_64.deb"), asset("app-aarch64.deb")];
-        assert_eq!(select_deb_assets(&assets, "amd64")[0].name, "app-x86_64.deb");
-        assert_eq!(select_deb_assets(&assets, "arm64")[0].name, "app-aarch64.deb");
+        assert_eq!(
+            select_deb_assets(&assets, "amd64")[0].name,
+            "app-x86_64.deb"
+        );
+        assert_eq!(
+            select_deb_assets(&assets, "arm64")[0].name,
+            "app-aarch64.deb"
+        );
     }
 
     #[test]
@@ -481,7 +517,10 @@ mod tests {
     #[test]
     fn reads_the_host_architecture_from_dpkg() {
         let fake = FakeRunner::new();
-        fake.on(&["dpkg", "--print-architecture"], CommandOutput::ok("amd64\n"));
+        fake.on(
+            &["dpkg", "--print-architecture"],
+            CommandOutput::ok("amd64\n"),
+        );
         assert_eq!(host_architecture(&fake), "amd64");
     }
 

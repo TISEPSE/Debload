@@ -226,7 +226,10 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(
             &["dpkg-deb"],
-            CommandOutput::fail(2, "dpkg-deb: erreur: 'casse.deb' n'est pas une archive Debian"),
+            CommandOutput::fail(
+                2,
+                "dpkg-deb: erreur: 'casse.deb' n'est pas une archive Debian",
+            ),
         );
 
         let err = read_deb_info(&fake, &path).unwrap_err();

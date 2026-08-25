@@ -1,0 +1,108 @@
+name: Release
+
+# Poser un tag `v*` publie la version correspondante.
+# Le déclenchement manuel sert à éprouver la chaîne sans rien publier.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Un échec sur une plateforme ne doit pas priver de l'autre : on veut
+      # voir les deux résultats.
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 plutôt que la dernière : le binaire est lié à la
+          # glibc du runner, et compiler sur la plus ancienne encore
+          # maintenue le rend installable sur le plus de distributions.
+          - os: ubuntu-22.04
+            label: Linux (.deb et AppImage)
+            args: '--bundles deb,appimage'
+          - os: windows-latest
+            label: Windows (.msi et .exe)
+            args: '--bundles msi,nsis'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.os }}
+
+      - name: Dépendances système
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf
+
+      - run: npm ci
+
+      # tauri-action compile le frontend, compile Rust, empaquette, puis
+      # dépose les fichiers dans une release en brouillon.
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
+          releaseName: Debload __VERSION__
+          releaseBody: |
+            ## Installation
+
+            **Linux** — téléchargez le `.deb` et installez-le :
+
+            ```
+            sudo dpkg -i Debload_*_amd64.deb
+            ```
+
+            Ensuite, Debload installe les suivants à votre place.
+            L'AppImage fonctionne sans installation : rendez-le exécutable et lancez-le.
+
+            **Windows** — exécutez le `.msi` ou le `.exe`.
+
+            > Debload installe et désinstalle des paquets Debian. Sur Windows,
+            > l'application se lance mais ne peut encore rien installer.
+          releaseDraft: true
+          prerelease: false
+          # Ne publie rien de lui-même : la release reste en brouillon
+          # jusqu'à ce que les deux plateformes aient abouti.
+          includeUpdaterJson: false
+
+  publish:
+    name: Publier la release
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Les deux plateformes ont abouti : on sort la release du brouillon.
+      - name: Sortir du brouillon
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --draft=false --latest

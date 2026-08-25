@@ -47,9 +47,18 @@ pub enum HelperRequest {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum HelperMessage {
     Progress(crate::progress::ProgressEvent),
-    Log { stream: String, line: String },
-    Done { status: Option<i32>, stdout: String, stderr: String },
-    Refused { reason: String },
+    Log {
+        stream: String,
+        line: String,
+    },
+    Done {
+        status: Option<i32>,
+        stdout: String,
+        stderr: String,
+    },
+    Refused {
+        reason: String,
+    },
 }
 
 /// Les opérations qui exigent root.
@@ -110,7 +119,10 @@ pub fn validate_request(request: &HelperRequest) -> Result<HelperRequest, Debloa
         }
         HelperRequest::Remove { name, purge } => {
             validate_package_name(name)?;
-            Ok(HelperRequest::Remove { name: name.clone(), purge: *purge })
+            Ok(HelperRequest::Remove {
+                name: name.clone(),
+                purge: *purge,
+            })
         }
     }
 }
@@ -129,14 +141,24 @@ pub fn helper_main() {
         }
 
         let Ok(request) = serde_json::from_str::<HelperRequest>(&line) else {
-            emit(&mut out, &HelperMessage::Refused { reason: "requête illisible".into() });
+            emit(
+                &mut out,
+                &HelperMessage::Refused {
+                    reason: "requête illisible".into(),
+                },
+            );
             continue;
         };
 
         let validated = match validate_request(&request) {
             Ok(r) => r,
             Err(err) => {
-                emit(&mut out, &HelperMessage::Refused { reason: err.to_string() });
+                emit(
+                    &mut out,
+                    &HelperMessage::Refused {
+                        reason: err.to_string(),
+                    },
+                );
                 continue;
             }
         };
@@ -162,10 +184,16 @@ fn run_apt(runner: &dyn CommandRunner, request: &HelperRequest, out: &mut impl W
         let message = if stream == "stdout" {
             match parse_status_line(line) {
                 Some(event) => HelperMessage::Progress(event),
-                None => HelperMessage::Log { stream: stream.into(), line: line.into() },
+                None => HelperMessage::Log {
+                    stream: stream.into(),
+                    line: line.into(),
+                },
             }
         } else {
-            HelperMessage::Log { stream: stream.into(), line: line.into() }
+            HelperMessage::Log {
+                stream: stream.into(),
+                line: line.into(),
+            }
         };
         emit(*sink.lock().unwrap(), &message);
     });
@@ -176,7 +204,9 @@ fn run_apt(runner: &dyn CommandRunner, request: &HelperRequest, out: &mut impl W
             stdout: output.stdout,
             stderr: output.stderr,
         },
-        Err(err) => HelperMessage::Refused { reason: err.to_string() },
+        Err(err) => HelperMessage::Refused {
+            reason: err.to_string(),
+        },
     };
     emit(out, &done);
 }
@@ -203,14 +233,18 @@ impl Default for HelperSession {
 
 impl HelperSession {
     pub fn new() -> Self {
-        Self { helper: Mutex::new(None) }
+        Self {
+            helper: Mutex::new(None),
+        }
     }
 
     /// Démarre le processus root. C'est ici, et seulement ici, qu'Ubuntu
     /// demande le mot de passe.
     fn spawn() -> Result<Helper, DebloadError> {
         let exe = std::env::current_exe().map_err(|e| DebloadError::Io(e.to_string()))?;
-        let exe = exe.to_str().ok_or_else(|| DebloadError::Io("chemin illisible".into()))?;
+        let exe = exe
+            .to_str()
+            .ok_or_else(|| DebloadError::Io("chemin illisible".into()))?;
 
         let mut child = Command::new("pkexec")
             .args([exe, HELPER_FLAG])
@@ -223,7 +257,11 @@ impl HelperSession {
         let stdin = child.stdin.take().expect("stdin demandé en tuyau");
         let stdout = child.stdout.take().expect("stdout demandé en tuyau");
 
-        Ok(Helper { child, stdin, stdout: BufReader::new(stdout) })
+        Ok(Helper {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+        })
     }
 
     /// Envoie une requête et rend compte jusqu'au message final.
@@ -266,7 +304,10 @@ impl HelperSession {
     ) -> Result<CommandOutput, DebloadError> {
         let json = serde_json::to_string(request).map_err(|e| DebloadError::Io(e.to_string()))?;
         writeln!(helper.stdin, "{json}").map_err(|e| DebloadError::Io(e.to_string()))?;
-        helper.stdin.flush().map_err(|e| DebloadError::Io(e.to_string()))?;
+        helper
+            .stdin
+            .flush()
+            .map_err(|e| DebloadError::Io(e.to_string()))?;
 
         let mut line = String::new();
         loop {
@@ -277,14 +318,24 @@ impl HelperSession {
                 .map_err(|e| DebloadError::Io(e.to_string()))?;
 
             if read == 0 {
-                return Err(DebloadError::Io("le processus privilégié s'est arrêté".into()));
+                return Err(DebloadError::Io(
+                    "le processus privilégié s'est arrêté".into(),
+                ));
             }
 
             match serde_json::from_str::<HelperMessage>(line.trim()) {
                 Ok(HelperMessage::Progress(event)) => sink(OutputEvent::Progress(event)),
                 Ok(HelperMessage::Log { stream, line }) => sink(OutputEvent::Log { stream, line }),
-                Ok(HelperMessage::Done { status, stdout, stderr }) => {
-                    return Ok(CommandOutput { status, stdout, stderr })
+                Ok(HelperMessage::Done {
+                    status,
+                    stdout,
+                    stderr,
+                }) => {
+                    return Ok(CommandOutput {
+                        status,
+                        stdout,
+                        stderr,
+                    })
                 }
                 Ok(HelperMessage::Refused { reason }) => {
                     return Err(DebloadError::CommandFailed(reason))
@@ -302,7 +353,12 @@ impl PrivilegedApt for HelperSession {
         path: &str,
         sink: &dyn Fn(OutputEvent),
     ) -> Result<CommandOutput, DebloadError> {
-        self.exchange(&HelperRequest::Install { path: path.to_string() }, sink)
+        self.exchange(
+            &HelperRequest::Install {
+                path: path.to_string(),
+            },
+            sink,
+        )
     }
 
     fn remove(
@@ -311,7 +367,13 @@ impl PrivilegedApt for HelperSession {
         purge: bool,
         sink: &dyn Fn(OutputEvent),
     ) -> Result<CommandOutput, DebloadError> {
-        self.exchange(&HelperRequest::Remove { name: name.to_string(), purge }, sink)
+        self.exchange(
+            &HelperRequest::Remove {
+                name: name.to_string(),
+                purge,
+            },
+            sink,
+        )
     }
 }
 
@@ -333,7 +395,9 @@ mod tests {
 
     #[test]
     fn install_builds_an_apt_install_line() {
-        let args = apt_args(&HelperRequest::Install { path: "/tmp/x.deb".into() });
+        let args = apt_args(&HelperRequest::Install {
+            path: "/tmp/x.deb".into(),
+        });
         assert_eq!(
             args,
             vec!["-o", "APT::Status-Fd=1", "install", "-y", "/tmp/x.deb"]
@@ -342,8 +406,14 @@ mod tests {
 
     #[test]
     fn remove_and_purge_differ_only_by_the_action() {
-        let remove = apt_args(&HelperRequest::Remove { name: "code".into(), purge: false });
-        let purge = apt_args(&HelperRequest::Remove { name: "code".into(), purge: true });
+        let remove = apt_args(&HelperRequest::Remove {
+            name: "code".into(),
+            purge: false,
+        });
+        let purge = apt_args(&HelperRequest::Remove {
+            name: "code".into(),
+            purge: true,
+        });
         assert!(remove.contains(&"remove".to_string()));
         assert!(purge.contains(&"purge".to_string()));
         assert!(!remove.contains(&"purge".to_string()));
@@ -386,8 +456,7 @@ mod tests {
         std::fs::write(&path, b"x").unwrap();
 
         let indirect = format!("{}/./x.deb", dir.path().to_str().unwrap());
-        let validated =
-            validate_request(&HelperRequest::Install { path: indirect }).unwrap();
+        let validated = validate_request(&HelperRequest::Install { path: indirect }).unwrap();
 
         match validated {
             HelperRequest::Install { path } => assert!(!path.contains("/./")),
@@ -402,14 +471,20 @@ mod tests {
             &["apt-get"],
             CommandOutput {
                 status: Some(0),
-                stdout: "Lecture des listes…\npmstatus:code:50.0:Dépaquetage de code\n"
-                    .to_string(),
+                stdout: "Lecture des listes…\npmstatus:code:50.0:Dépaquetage de code\n".to_string(),
                 stderr: String::new(),
             },
         );
 
         let mut out = Vec::new();
-        run_apt(&fake, &HelperRequest::Remove { name: "code".into(), purge: false }, &mut out);
+        run_apt(
+            &fake,
+            &HelperRequest::Remove {
+                name: "code".into(),
+                purge: false,
+            },
+            &mut out,
+        );
 
         let messages: Vec<HelperMessage> = String::from_utf8(out)
             .unwrap()
@@ -419,20 +494,35 @@ mod tests {
 
         assert!(matches!(messages[0], HelperMessage::Log { .. }));
         assert!(matches!(messages[1], HelperMessage::Progress(_)));
-        assert!(matches!(messages[2], HelperMessage::Done { status: Some(0), .. }));
+        assert!(matches!(
+            messages[2],
+            HelperMessage::Done {
+                status: Some(0),
+                ..
+            }
+        ));
     }
 
     #[test]
     fn root_side_reports_a_failure_verbatim() {
         let fake = FakeRunner::new();
-        fake.on(&["apt-get"], CommandOutput::fail(100, "E: dépendance manquante"));
+        fake.on(
+            &["apt-get"],
+            CommandOutput::fail(100, "E: dépendance manquante"),
+        );
 
         let mut out = Vec::new();
-        run_apt(&fake, &HelperRequest::Remove { name: "code".into(), purge: false }, &mut out);
+        run_apt(
+            &fake,
+            &HelperRequest::Remove {
+                name: "code".into(),
+                purge: false,
+            },
+            &mut out,
+        );
 
         let last: HelperMessage =
-            serde_json::from_str(String::from_utf8(out).unwrap().lines().last().unwrap())
-                .unwrap();
+            serde_json::from_str(String::from_utf8(out).unwrap().lines().last().unwrap()).unwrap();
         match last {
             HelperMessage::Done { status, stderr, .. } => {
                 assert_eq!(status, Some(100));

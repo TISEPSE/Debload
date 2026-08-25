@@ -28,7 +28,10 @@ pub struct History {
 
 impl History {
     pub fn new() -> Self {
-        Self { version: FORMAT_VERSION, entries: Vec::new() }
+        Self {
+            version: FORMAT_VERSION,
+            entries: Vec::new(),
+        }
     }
 
     /// Ajoute une entrée, ou remplace celle qui porte déjà ce nom de paquet.
@@ -80,8 +83,7 @@ pub fn save(path: &Path, history: &History) -> Result<(), DebloadError> {
         std::fs::create_dir_all(parent).map_err(|e| DebloadError::Io(e.to_string()))?;
     }
 
-    let raw =
-        serde_json::to_string_pretty(history).map_err(|e| DebloadError::Io(e.to_string()))?;
+    let raw = serde_json::to_string_pretty(history).map_err(|e| DebloadError::Io(e.to_string()))?;
 
     std::fs::write(path, raw).map_err(|e| DebloadError::Io(e.to_string()))
 }

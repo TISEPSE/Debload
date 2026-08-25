@@ -52,11 +52,7 @@ pub struct RepoRelease {
 }
 
 /// Construit la liste, sans toucher au réseau.
-pub fn rows(
-    runner: &dyn CommandRunner,
-    catalog: &Catalog,
-    user: &UserRepos,
-) -> Vec<RepoRow> {
+pub fn rows(runner: &dyn CommandRunner, catalog: &Catalog, user: &UserRepos) -> Vec<RepoRow> {
     repos::effective(catalog, user)
         .into_iter()
         .map(|entry| {
@@ -213,7 +209,11 @@ mod tests {
     use crate::runner::{CommandOutput, FakeRunner};
 
     fn asset(name: &str) -> Asset {
-        Asset { name: name.into(), url: format!("https://github.com/x/{name}"), size: 1 }
+        Asset {
+            name: name.into(),
+            url: format!("https://github.com/x/{name}"),
+            size: 1,
+        }
     }
 
     fn catalog() -> Catalog {
@@ -248,7 +248,10 @@ mod tests {
         user.remember_package("TISEPSE/MailFlow", "mail-flow");
 
         let fake = FakeRunner::new();
-        fake.on(&["dpkg-query", "mail-flow"], CommandOutput::ok("installed|0.1.8|amd64"));
+        fake.on(
+            &["dpkg-query", "mail-flow"],
+            CommandOutput::ok("installed|0.1.8|amd64"),
+        );
 
         let rows = rows(&fake, &catalog(), &user);
         assert_eq!(rows[0].package.as_deref(), Some("mail-flow"));
@@ -303,7 +306,10 @@ mod tests {
         ));
 
         // Une fois nommé, le doute est levé.
-        assert_eq!(choose_asset(&assets, Some("app-beta.deb")).unwrap().name, "app-beta.deb");
+        assert_eq!(
+            choose_asset(&assets, Some("app-beta.deb")).unwrap().name,
+            "app-beta.deb"
+        );
     }
 
     #[test]

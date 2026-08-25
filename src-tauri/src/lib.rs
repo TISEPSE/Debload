@@ -6,9 +6,9 @@ pub mod history;
 pub mod launch;
 pub mod pkg;
 pub mod privileged;
+pub mod progress;
 pub mod repo_ops;
 pub mod repos;
-pub mod progress;
 pub mod runner;
 
 use std::sync::Arc;

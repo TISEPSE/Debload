@@ -10,9 +10,9 @@ use crate::history::{self, HistoryEntry};
 use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
 use crate::privileged::PrivilegedApt;
+use crate::progress::ProgressEvent;
 use crate::repo_ops::{self, RepoRelease, RepoRow};
 use crate::repos;
-use crate::progress::ProgressEvent;
 use crate::runner::CommandRunner;
 
 /// État partagé injecté par Tauri dans chaque commande.
@@ -112,7 +112,11 @@ pub fn install(
 
     if !out.success() {
         // apt écrit parfois ses diagnostics sur stdout ; on remonte ce qui existe.
-        let detail = if out.stderr.trim().is_empty() { &out.stdout } else { &out.stderr };
+        let detail = if out.stderr.trim().is_empty() {
+            &out.stdout
+        } else {
+            &out.stderr
+        };
         return Err(classify_failure(out.status, detail));
     }
 
@@ -134,7 +138,11 @@ pub fn install(
 
     let launchable = is_launchable(runner, &info.package);
 
-    Ok(OperationResult { package: info.package, version: info.version, launchable })
+    Ok(OperationResult {
+        package: info.package,
+        version: info.version,
+        launchable,
+    })
 }
 
 /// Liste les paquets gérés par Debload, après réconciliation avec dpkg.
@@ -208,7 +216,11 @@ pub fn remove_package(
     let out = apt.remove(name, purge, sink)?;
 
     if !out.success() {
-        let detail = if out.stderr.trim().is_empty() { &out.stdout } else { &out.stderr };
+        let detail = if out.stderr.trim().is_empty() {
+            &out.stdout
+        } else {
+            &out.stderr
+        };
         return Err(classify_failure(out.status, detail));
     }
 
@@ -222,7 +234,11 @@ pub fn remove_package(
     hist.remove(name);
     history::save(history_path, &hist)?;
 
-    Ok(OperationResult { package: name.to_string(), version, launchable: false })
+    Ok(OperationResult {
+        package: name.to_string(),
+        version,
+        launchable: false,
+    })
 }
 
 // --- Enveloppes Tauri -------------------------------------------------------
@@ -290,7 +306,14 @@ pub async fn uninstall(
                 let _ = app.emit("uninstall-log", LogLine { stream, line });
             }
         };
-        remove_package(runner.as_ref(), apt.as_ref(), &history_path, &name, purge, &emit)
+        remove_package(
+            runner.as_ref(),
+            apt.as_ref(),
+            &history_path,
+            &name,
+            purge,
+            &emit,
+        )
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
@@ -359,7 +382,10 @@ mod tests {
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
-        fake.on(&["dpkg-query"], CommandOutput::ok("installed|1.100.0|amd64"));
+        fake.on(
+            &["dpkg-query"],
+            CommandOutput::ok("installed|1.100.0|amd64"),
+        );
 
         let info = inspect(&fake, &deb).unwrap();
         assert_eq!(info.already_installed.as_deref(), Some("1.100.0"));
@@ -421,9 +447,13 @@ mod tests {
 
         assert!(privileged.contains(&"/usr/bin/apt-get".to_string()));
         assert!(privileged.contains(&"install".to_string()));
-        assert!(privileged.iter().any(|a| a.starts_with('/') && a.ends_with("code.deb")));
+        assert!(privileged
+            .iter()
+            .any(|a| a.starts_with('/') && a.ends_with("code.deb")));
         assert!(
-            !privileged.iter().any(|a| a == "sh" || a == "bash" || a == "-c"),
+            !privileged
+                .iter()
+                .any(|a| a == "sh" || a == "bash" || a == "-c"),
             "aucun shell ne doit intervenir : {privileged:?}"
         );
     }
@@ -475,7 +505,10 @@ mod tests {
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
 
         let events = std::sync::Mutex::new(Vec::new());
-        install(&fake, &fake, &hist, &deb, &|event| events.lock().unwrap().push(event)).unwrap();
+        install(&fake, &fake, &hist, &deb, &|event| {
+            events.lock().unwrap().push(event)
+        })
+        .unwrap();
 
         let events = events.lock().unwrap();
         let progress: Vec<_> = events
@@ -499,7 +532,9 @@ mod tests {
 
         // Les lignes de statut ne polluent pas le journal.
         assert_eq!(logs.len(), 2);
-        assert!(logs.iter().all(|l| !l.starts_with("pmstatus") && !l.starts_with("dlstatus")));
+        assert!(logs
+            .iter()
+            .all(|l| !l.starts_with("pmstatus") && !l.starts_with("dlstatus")));
     }
 
     #[test]
@@ -514,7 +549,11 @@ mod tests {
         fake.on(&["dpkg", "-L"], CommandOutput::ok("/usr/bin/code\n"));
         install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
 
-        let call = fake.calls().into_iter().find(|c| c[0] == "/usr/bin/apt-get").unwrap();
+        let call = fake
+            .calls()
+            .into_iter()
+            .find(|c| c[0] == "/usr/bin/apt-get")
+            .unwrap();
         assert!(
             call.contains(&"APT::Status-Fd=1".to_string()),
             "sans cette option apt ne rapporte aucun avancement : {call:?}"
@@ -587,12 +626,19 @@ mod tests {
         // pour savoir s'il y a quelque chose à ouvrir.
         let desktop = dir.path().join("applications/Code.desktop");
         std::fs::create_dir_all(desktop.parent().unwrap()).unwrap();
-        std::fs::write(&desktop, "[Desktop Entry]\nType=Application\nExec=code %U\n").unwrap();
+        std::fs::write(
+            &desktop,
+            "[Desktop Entry]\nType=Application\nExec=code %U\n",
+        )
+        .unwrap();
 
         let fake = FakeRunner::new();
         fake.on(&["dpkg-deb"], CommandOutput::ok(deb_fields()));
         fake.on(&["apt-get"], ok_install());
-        fake.on(&["dpkg", "-L"], CommandOutput::ok(desktop.to_str().unwrap()));
+        fake.on(
+            &["dpkg", "-L"],
+            CommandOutput::ok(desktop.to_str().unwrap()),
+        );
 
         let result = install(&fake, &fake, &hist, &deb, &|_| {}).unwrap();
         assert!(result.launchable);
@@ -622,7 +668,10 @@ mod tests {
         seed_history(&hist, &["code"]);
 
         let fake = FakeRunner::new();
-        fake.on(&["Status-Status", "code"], CommandOutput::ok("installed|2.5.0|amd64"));
+        fake.on(
+            &["Status-Status", "code"],
+            CommandOutput::ok("installed|2.5.0|amd64"),
+        );
         fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
 
         let list = list(&fake, &hist).unwrap();
@@ -640,9 +689,15 @@ mod tests {
         seed_history(&hist, &["code", "parti"]);
 
         let fake = FakeRunner::new();
-        fake.on(&["Status-Status", "code"], CommandOutput::ok("installed|2.5.0|amd64"));
+        fake.on(
+            &["Status-Status", "code"],
+            CommandOutput::ok("installed|2.5.0|amd64"),
+        );
         fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
-        fake.on(&["Status-Status", "parti"], CommandOutput::fail(1, "inconnu"));
+        fake.on(
+            &["Status-Status", "parti"],
+            CommandOutput::fail(1, "inconnu"),
+        );
 
         let list = list(&fake, &hist).unwrap();
         assert_eq!(list.len(), 1);
@@ -661,7 +716,10 @@ mod tests {
         seed_history(&hist, &["bash"]);
 
         let fake = FakeRunner::new();
-        fake.on(&["Status-Status", "bash"], CommandOutput::ok("installed|5.2|amd64"));
+        fake.on(
+            &["Status-Status", "bash"],
+            CommandOutput::ok("installed|5.2|amd64"),
+        );
         fake.on(&["Essential", "bash"], CommandOutput::ok("yes|required"));
 
         let list = list(&fake, &hist).unwrap();
@@ -707,8 +765,15 @@ mod tests {
 
             remove_package(&fake, &fake, &hist, "code", purge, &|_| {}).unwrap();
 
-            let call = fake.calls().into_iter().find(|c| c[0] == "/usr/bin/apt-get").unwrap();
-            assert!(call.contains(&expected.to_string()), "attendu {expected} dans {call:?}");
+            let call = fake
+                .calls()
+                .into_iter()
+                .find(|c| c[0] == "/usr/bin/apt-get")
+                .unwrap();
+            assert!(
+                call.contains(&expected.to_string()),
+                "attendu {expected} dans {call:?}"
+            );
         }
     }
 
@@ -748,7 +813,8 @@ mod tests {
         seed_history(&hist, &["code"]);
 
         let fake = FakeRunner::new();
-        let err = remove_package(&fake, &fake, &hist, "--purge -y bash", false, &|_| {}).unwrap_err();
+        let err =
+            remove_package(&fake, &fake, &hist, "--purge -y bash", false, &|_| {}).unwrap_err();
 
         assert!(matches!(err, DebloadError::InvalidPackageName(_)));
         assert!(fake.calls().is_empty());

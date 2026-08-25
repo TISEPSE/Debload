@@ -38,7 +38,10 @@ pub struct CatalogEntry {
 
 impl CatalogEntry {
     pub fn repo_ref(&self) -> RepoRef {
-        RepoRef { owner: self.owner.clone(), repo: self.repo.clone() }
+        RepoRef {
+            owner: self.owner.clone(),
+            repo: self.repo.clone(),
+        }
     }
 
     pub fn slug(&self) -> String {
@@ -73,13 +76,21 @@ pub struct UserRepos {
 
 impl Default for UserRepos {
     fn default() -> Self {
-        Self { version: 1, added: Vec::new(), hidden: Vec::new(), packages: Vec::new() }
+        Self {
+            version: 1,
+            added: Vec::new(),
+            hidden: Vec::new(),
+            packages: Vec::new(),
+        }
     }
 }
 
 impl UserRepos {
     pub fn package_for(&self, slug: &str) -> Option<&str> {
-        self.packages.iter().find(|(s, _)| s == slug).map(|(_, p)| p.as_str())
+        self.packages
+            .iter()
+            .find(|(s, _)| s == slug)
+            .map(|(_, p)| p.as_str())
     }
 
     pub fn remember_package(&mut self, slug: &str, package: &str) {
@@ -114,9 +125,8 @@ impl UserRepos {
 /// Charge le catalogue livré, ou celui de secours s'il est absent.
 pub fn load_catalog(path: &Path) -> Catalog {
     let raw = std::fs::read_to_string(path).unwrap_or_else(|_| FALLBACK.to_string());
-    serde_json::from_str(&raw).unwrap_or_else(|_| {
-        serde_json::from_str(FALLBACK).unwrap_or_default()
-    })
+    serde_json::from_str(&raw)
+        .unwrap_or_else(|_| serde_json::from_str(FALLBACK).unwrap_or_default())
 }
 
 pub fn load_user(path: &Path) -> UserRepos {
@@ -184,13 +194,18 @@ mod tests {
     }
 
     fn catalog() -> Catalog {
-        Catalog { entries: vec![entry("TISEPSE", "MailFlow"), entry("TISEPSE", "Nexus")] }
+        Catalog {
+            entries: vec![entry("TISEPSE", "MailFlow"), entry("TISEPSE", "Nexus")],
+        }
     }
 
     #[test]
     fn the_bundled_catalog_is_valid_json() {
         let parsed: Catalog = serde_json::from_str(FALLBACK).expect("catalogue livré lisible");
-        assert!(!parsed.entries.is_empty(), "le catalogue livré ne doit pas être vide");
+        assert!(
+            !parsed.entries.is_empty(),
+            "le catalogue livré ne doit pas être vide"
+        );
     }
 
     #[test]

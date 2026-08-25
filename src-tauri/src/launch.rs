@@ -12,10 +12,7 @@ use crate::pkg::validate_package_name;
 use crate::runner::CommandRunner;
 
 /// Fichiers `.desktop` installés par un paquet.
-pub fn desktop_files(
-    runner: &dyn CommandRunner,
-    name: &str,
-) -> Result<Vec<PathBuf>, DebloadError> {
+pub fn desktop_files(runner: &dyn CommandRunner, name: &str) -> Result<Vec<PathBuf>, DebloadError> {
     validate_package_name(name)?;
 
     let out = runner.run("dpkg", &["-L", name])?;
@@ -57,7 +54,9 @@ pub fn parse_desktop_exec(content: &str) -> Option<Vec<String>> {
             continue;
         }
 
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         match key.trim() {
             "Exec" => exec = Some(value.trim().to_string()),
             "Type" => kind = Some(value.trim().to_string()),
@@ -121,7 +120,9 @@ pub fn find_launch_command(
     name: &str,
 ) -> Result<Option<Vec<String>>, DebloadError> {
     for path in desktop_files(runner, name)? {
-        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
         if let Some(argv) = parse_desktop_exec(&content) {
             return Ok(Some(argv));
         }
@@ -161,7 +162,10 @@ mod tests {
 
     #[test]
     fn extracts_simple_exec() {
-        assert_eq!(parse_desktop_exec(MAILFLOW), Some(vec!["mailflow".to_string()]));
+        assert_eq!(
+            parse_desktop_exec(MAILFLOW),
+            Some(vec!["mailflow".to_string()])
+        );
     }
 
     #[test]

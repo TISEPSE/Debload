@@ -81,8 +81,8 @@ mod tests {
 
     #[test]
     fn reads_an_install_line() {
-        let event = parse_status_line("pmstatus:mail-flow:16.6667:Dépaquetage de mail-flow")
-            .unwrap();
+        let event =
+            parse_status_line("pmstatus:mail-flow:16.6667:Dépaquetage de mail-flow").unwrap();
         assert_eq!(event.phase, ProgressPhase::Install);
         assert!((event.percent - 16.6667).abs() < 0.001);
         assert_eq!(event.message, "Dépaquetage de mail-flow");
@@ -91,18 +91,23 @@ mod tests {
     #[test]
     fn recognises_the_other_status_tags() {
         assert_eq!(
-            parse_status_line("pmconffile:/etc/truc.conf:50:Fichier modifié").unwrap().phase,
+            parse_status_line("pmconffile:/etc/truc.conf:50:Fichier modifié")
+                .unwrap()
+                .phase,
             ProgressPhase::ConfFile
         );
         assert_eq!(
-            parse_status_line("pmerror:mail-flow:0:Échec du sous-processus").unwrap().phase,
+            parse_status_line("pmerror:mail-flow:0:Échec du sous-processus")
+                .unwrap()
+                .phase,
             ProgressPhase::Error
         );
     }
 
     #[test]
     fn keeps_colons_inside_the_message() {
-        let event = parse_status_line("pmstatus:code:50:Préparation : dépaquetage de code").unwrap();
+        let event =
+            parse_status_line("pmstatus:code:50:Préparation : dépaquetage de code").unwrap();
         assert_eq!(event.message, "Préparation : dépaquetage de code");
     }
 
@@ -115,7 +120,10 @@ mod tests {
             "",
             "n'importe quoi",
         ] {
-            assert!(parse_status_line(line).is_none(), "reconnu à tort : {line:?}");
+            assert!(
+                parse_status_line(line).is_none(),
+                "reconnu à tort : {line:?}"
+            );
         }
     }
 
@@ -127,7 +135,13 @@ mod tests {
 
     #[test]
     fn clamps_percentages_out_of_range() {
-        assert_eq!(parse_status_line("pmstatus:x:120:trop").unwrap().percent, 100.0);
-        assert_eq!(parse_status_line("pmstatus:x:-5:négatif").unwrap().percent, 0.0);
+        assert_eq!(
+            parse_status_line("pmstatus:x:120:trop").unwrap().percent,
+            100.0
+        );
+        assert_eq!(
+            parse_status_line("pmstatus:x:-5:négatif").unwrap().percent,
+            0.0
+        );
     }
 }

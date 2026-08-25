@@ -28,9 +28,8 @@ pub fn validate_package_name(name: &str) -> Result<&str, DebloadError> {
         return Err(invalid());
     }
 
-    let rest_ok = chars.all(|c| {
-        c.is_ascii_lowercase() || c.is_ascii_digit() || c == '+' || c == '.' || c == '-'
-    });
+    let rest_ok = chars
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '+' || c == '.' || c == '-');
 
     if rest_ok {
         Ok(name)
@@ -51,11 +50,19 @@ pub fn query_installed(
 
     let out = runner.run(
         "dpkg-query",
-        &["-W", "-f=${db:Status-Status}|${Version}|${Architecture}", name],
+        &[
+            "-W",
+            "-f=${db:Status-Status}|${Version}|${Architecture}",
+            name,
+        ],
     )?;
 
     if !out.success() {
-        return Ok(InstalledState { installed: false, version: None, architecture: None });
+        return Ok(InstalledState {
+            installed: false,
+            version: None,
+            architecture: None,
+        });
     }
 
     let parts: Vec<&str> = out.stdout.trim().split('|').collect();
@@ -64,8 +71,14 @@ pub fn query_installed(
 
     Ok(InstalledState {
         installed,
-        version: parts.get(1).filter(|v| !v.is_empty() && installed).map(|v| v.to_string()),
-        architecture: parts.get(2).filter(|v| !v.is_empty()).map(|v| v.to_string()),
+        version: parts
+            .get(1)
+            .filter(|v| !v.is_empty() && installed)
+            .map(|v| v.to_string()),
+        architecture: parts
+            .get(2)
+            .filter(|v| !v.is_empty())
+            .map(|v| v.to_string()),
     })
 }
 
@@ -109,7 +122,10 @@ mod tests {
     #[test]
     fn accepts_valid_debian_names() {
         for name in ["code", "g++", "python3.12", "lib32z1", "apt-utils", "0ad"] {
-            assert!(validate_package_name(name).is_ok(), "refusé à tort : {name}");
+            assert!(
+                validate_package_name(name).is_ok(),
+                "refusé à tort : {name}"
+            );
         }
     }
 
@@ -126,14 +142,20 @@ mod tests {
             "paquet\nautre",
             "../../etc/passwd",
         ] {
-            assert!(validate_package_name(name).is_err(), "accepté à tort : {name:?}");
+            assert!(
+                validate_package_name(name).is_err(),
+                "accepté à tort : {name:?}"
+            );
         }
     }
 
     #[test]
     fn reports_installed_package_with_version() {
         let fake = FakeRunner::new();
-        fake.on(&["dpkg-query", "code"], CommandOutput::ok("installed|1.104.2|amd64"));
+        fake.on(
+            &["dpkg-query", "code"],
+            CommandOutput::ok("installed|1.104.2|amd64"),
+        );
         let state = query_installed(&fake, "code").unwrap();
         assert!(state.installed);
         assert_eq!(state.version.as_deref(), Some("1.104.2"));
@@ -211,6 +233,9 @@ mod tests {
         let fake = FakeRunner::new();
         let err = is_protected(&fake, "bash; rm -rf /").unwrap_err();
         assert!(matches!(err, DebloadError::InvalidPackageName(_)));
-        assert!(fake.calls().is_empty(), "aucune commande ne doit être lancée");
+        assert!(
+            fake.calls().is_empty(),
+            "aucune commande ne doit être lancée"
+        );
     }
 }

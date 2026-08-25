@@ -34,7 +34,10 @@ fn build_fixture(root: &Path) -> std::path::PathBuf {
         .args(["--build", pkg_dir.to_str().unwrap(), out.to_str().unwrap()])
         .output()
         .expect("dpkg-deb doit être installé");
-    assert!(status.status.success(), "dpkg-deb --build a échoué: {status:?}");
+    assert!(
+        status.status.success(),
+        "dpkg-deb --build a échoué: {status:?}"
+    );
 
     out
 }
@@ -52,7 +55,9 @@ fn reads_a_real_deb_end_to_end() {
     assert_eq!(info.architecture, "all");
     assert_eq!(info.summary, "Un paquet d'essai");
     assert!(info.description.contains("Première ligne de détail."));
-    assert!(info.description.contains("Second paragraphe après une ligne vide."));
+    assert!(info
+        .description
+        .contains("Second paragraphe après une ligne vide."));
     assert_eq!(
         info.maintainer.as_deref(),
         Some("Debload Tests <tests@example.invalid>")

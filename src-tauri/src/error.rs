@@ -97,13 +97,19 @@ mod tests {
     #[test]
     fn dpkg_lock_message_maps_to_locked() {
         let stderr = "E: Could not get lock /var/lib/dpkg/lock-frontend";
-        assert_eq!(classify_failure(Some(100), stderr), DebloadError::DpkgLocked);
+        assert_eq!(
+            classify_failure(Some(100), stderr),
+            DebloadError::DpkgLocked
+        );
     }
 
     #[test]
     fn other_failures_carry_stderr() {
         let err = classify_failure(Some(100), "  paquet introuvable\n");
-        assert_eq!(err, DebloadError::CommandFailed("paquet introuvable".to_string()));
+        assert_eq!(
+            err,
+            DebloadError::CommandFailed("paquet introuvable".to_string())
+        );
     }
 
     #[test]

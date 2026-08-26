@@ -25,6 +25,9 @@ pub enum DebloadError {
     NoDebAsset(String),
     /// Limite d'appels à l'API GitHub atteinte.
     GithubRateLimited,
+    /// GitHub est injoignable : pas de réseau, DNS muet, connexion coupée.
+    /// Distinct d'un échec GitHub, parce que celui-ci se retente tout seul.
+    Offline(String),
     /// Échec générique côté GitHub, message conservé.
     GithubFailed(String),
     /// Une URL de téléchargement sortant des hôtes GitHub.
@@ -58,6 +61,7 @@ impl std::fmt::Display for DebloadError {
                 f,
                 "Limite d'appels à GitHub atteinte. Réessaie dans quelques minutes."
             ),
+            Self::Offline(m) => write!(f, "GitHub est injoignable : {m}"),
             Self::GithubFailed(m) => write!(f, "GitHub : {m}"),
             Self::UntrustedUrl(u) => write!(f, "Téléchargement refusé, hors de GitHub : {u}"),
             Self::AssetChoiceRequired => write!(f, "Plusieurs paquets conviennent : choisis-en un"),

@@ -5,11 +5,14 @@
 
 use std::io::{Read, Write};
 use std::path::Path;
+use std::sync::OnceLock;
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::DebloadError;
 use crate::runner::CommandRunner;
+use crate::settings::Platform;
 
 /// Hôtes depuis lesquels un fichier peut être téléchargé.
 const ALLOWED_HOSTS: [&str; 3] = [
@@ -114,20 +117,25 @@ pub fn is_allowed_download_url(url: &str) -> bool {
     ALLOWED_HOSTS.contains(&host)
 }
 
-/// Ne garde que les paquets Debian installables sur cette machine.
+/// Ne garde que les fichiers qui ont un sens sur le système visé.
 ///
 /// Le filtre par architecture n'est appliqué que s'il laisse un candidat :
 /// beaucoup de projets ne mentionnent pas l'architecture dans le nom du
 /// fichier, et les écarter reviendrait à ne rien proposer.
-pub fn select_deb_assets(assets: &[Asset], arch: &str) -> Vec<Asset> {
-    let debs: Vec<Asset> = assets
+pub fn select_assets(assets: &[Asset], arch: &str, platform: Platform) -> Vec<Asset> {
+    let extensions = platform.extensions();
+
+    let candidates: Vec<Asset> = assets
         .iter()
-        .filter(|a| a.name.to_lowercase().ends_with(".deb"))
+        .filter(|a| {
+            let name = a.name.to_lowercase();
+            extensions.iter().any(|ext| name.ends_with(ext))
+        })
         .cloned()
         .collect();
 
-    if debs.len() <= 1 {
-        return debs;
+    if candidates.len() <= 1 {
+        return candidates;
     }
 
     // Les projets orthographient l'architecture comme ils veulent : LocalSend
@@ -137,14 +145,19 @@ pub fn select_deb_assets(assets: &[Asset], arch: &str) -> Vec<Asset> {
         "arm64" => &["arm64", "aarch64", "arm-64"],
         "armhf" => &["armhf", "armv7", "arm-32"],
         "i386" => &["i386", "i686", "x86-32"],
-        other => return keep_matching(&debs, &[other]).unwrap_or(debs),
+        other => return keep_matching(&candidates, &[other]).unwrap_or(candidates),
     };
 
-    keep_matching(&debs, aliases).unwrap_or(debs)
+    keep_matching(&candidates, aliases).unwrap_or(candidates)
 }
 
-fn keep_matching(debs: &[Asset], aliases: &[&str]) -> Option<Vec<Asset>> {
-    let matched: Vec<Asset> = debs
+/// Cas Debian, conservé pour ce qui ne raisonne qu'en paquets.
+pub fn select_deb_assets(assets: &[Asset], arch: &str) -> Vec<Asset> {
+    select_assets(assets, arch, Platform::Debian)
+}
+
+fn keep_matching(candidates: &[Asset], aliases: &[&str]) -> Option<Vec<Asset>> {
+    let matched: Vec<Asset> = candidates
         .iter()
         .filter(|a| {
             let name = a.name.to_lowercase();
@@ -165,6 +178,15 @@ pub fn host_architecture(runner: &dyn CommandRunner) -> String {
         .map(|o| o.stdout.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "amd64".to_string())
+}
+
+/// Même chose, mais une seule fois par exécution.
+///
+/// L'architecture ne change pas en cours de route, et le catalogue interroge
+/// vingt dépôts d'affilée : sans ce cache, chacun relancerait `dpkg`.
+pub fn cached_host_architecture(runner: &dyn CommandRunner) -> String {
+    static ARCH: OnceLock<String> = OnceLock::new();
+    ARCH.get_or_init(|| host_architecture(runner)).clone()
 }
 
 // --- Réseau ----------------------------------------------------------------
@@ -222,12 +244,88 @@ pub fn gh_token(runner: &dyn CommandRunner) -> Option<String> {
     (!token.is_empty()).then(|| token.to_string())
 }
 
-fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .timeout_global(Some(std::time::Duration::from_secs(30)))
-        .user_agent("Debload")
-        .build()
-        .into()
+/// Même chose, mais une seule fois par exécution.
+///
+/// `gh auth token` lance un processus ; le refaire pour chacun des vingt
+/// dépôts du catalogue revenait à ouvrir vingt processus en même temps que
+/// vingt requêtes réseau, au pire moment.
+pub fn cached_gh_token(runner: &dyn CommandRunner) -> Option<String> {
+    static TOKEN: OnceLock<Option<String>> = OnceLock::new();
+    TOKEN.get_or_init(|| gh_token(runner)).clone()
+}
+
+/// L'agent HTTP, partagé par toute l'application.
+///
+/// Un agent par requête rouvrait une connexion et relançait une résolution de
+/// nom à chaque fois. Celui-ci garde son pool : les vingt dépôts du catalogue
+/// se partagent la même connexion à `api.github.com`.
+fn agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_global(Some(Duration::from_secs(30)))
+            .user_agent("Debload")
+            .build()
+            .into()
+    })
+}
+
+/// Vrai pour une panne passagère, qu'il vaut la peine de retenter.
+///
+/// Un 404 ne s'arrangera pas en réessayant ; un DNS qui bafouille, si.
+fn is_transient(err: &ureq::Error) -> bool {
+    matches!(
+        err,
+        ureq::Error::Io(_)
+            | ureq::Error::HostNotFound
+            | ureq::Error::ConnectionFailed
+            | ureq::Error::Timeout(_)
+            | ureq::Error::StatusCode(500..=599)
+    )
+}
+
+/// Vrai quand l'échec vient du lien réseau, pas de GitHub.
+fn is_offline(err: &ureq::Error) -> bool {
+    matches!(
+        err,
+        ureq::Error::Io(_)
+            | ureq::Error::HostNotFound
+            | ureq::Error::ConnectionFailed
+            | ureq::Error::Timeout(_)
+    )
+}
+
+/// Rejoue un appel tant qu'il échoue pour une raison passagère.
+///
+/// Au lancement, le résolveur du système reçoit toutes les demandes d'un coup
+/// et peut répondre « échec temporaire » alors que le réseau est bien là. Une
+/// pause de quelques centaines de millisecondes suffit à le laisser souffler.
+fn with_retry<T>(
+    attempts: u32,
+    mut call: impl FnMut() -> Result<T, ureq::Error>,
+) -> Result<T, ureq::Error> {
+    let mut delay = Duration::from_millis(300);
+    let mut left = attempts.saturating_sub(1);
+
+    loop {
+        match call() {
+            Err(err) if left > 0 && is_transient(&err) => {
+                std::thread::sleep(delay);
+                delay *= 3;
+                left -= 1;
+            }
+            outcome => return outcome,
+        }
+    }
+}
+
+/// Traduit un échec de transport en erreur métier.
+fn transport_error(err: ureq::Error) -> DebloadError {
+    if is_offline(&err) {
+        DebloadError::Offline(err.to_string())
+    } else {
+        DebloadError::GithubFailed(err.to_string())
+    }
 }
 
 /// Interroge l'API pour la dernière release publiée d'un dépôt.
@@ -237,16 +335,22 @@ pub fn fetch_latest_release(repo: &RepoRef, token: Option<&str>) -> Result<Relea
         repo.owner, repo.repo
     );
 
-    let mut request = agent()
-        .get(&url)
-        .header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28");
+    // La requête se reconstruit à chaque tentative : un constructeur ureq se
+    // consomme en partant, il ne se rejoue pas.
+    let send = || {
+        let mut request = agent()
+            .get(&url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28");
 
-    if let Some(token) = token {
-        request = request.header("Authorization", &format!("Bearer {token}"));
-    }
+        if let Some(token) = token {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
 
-    let mut response = match request.call() {
+        request.call()
+    };
+
+    let mut response = match with_retry(3, send) {
         Ok(response) => response,
         Err(ureq::Error::StatusCode(404)) => {
             return Err(DebloadError::NoRelease(repo.slug()));
@@ -259,9 +363,7 @@ pub fn fetch_latest_release(repo: &RepoRef, token: Option<&str>) -> Result<Relea
                 "GitHub a répondu {code}"
             )));
         }
-        Err(err) => {
-            return Err(DebloadError::GithubFailed(err.to_string()));
-        }
+        Err(err) => return Err(transport_error(err)),
     };
 
     let body = response
@@ -270,6 +372,87 @@ pub fn fetch_latest_release(repo: &RepoRef, token: Option<&str>) -> Result<Relea
         .map_err(|e| DebloadError::GithubFailed(e.to_string()))?;
 
     parse_release(&body)
+}
+
+/// Décode la liste des releases et retient la plus récente.
+///
+/// GitHub les renvoie de la plus neuve à la plus ancienne ; on écarte
+/// seulement les brouillons, qui ne sont visibles que de leurs auteurs.
+pub fn parse_newest_release(body: &str) -> Result<Release, DebloadError> {
+    #[derive(Deserialize)]
+    struct RawDraft {
+        #[serde(default)]
+        draft: bool,
+    }
+
+    let raw: Vec<serde_json::Value> = serde_json::from_str(body)
+        .map_err(|e| DebloadError::GithubFailed(format!("réponse illisible : {e}")))?;
+
+    for entry in raw {
+        let is_draft = serde_json::from_value::<RawDraft>(entry.clone())
+            .map(|d| d.draft)
+            .unwrap_or(false);
+        if is_draft {
+            continue;
+        }
+        if let Ok(release) = parse_release(&entry.to_string()) {
+            return Ok(release);
+        }
+    }
+
+    Err(DebloadError::NoRelease(
+        "aucune release publiée".to_string(),
+    ))
+}
+
+/// Interroge l'API en acceptant les préversions.
+///
+/// `releases/latest` les ignore par construction : pour les voir il faut lire
+/// la liste complète et prendre la première.
+pub fn fetch_newest_release(repo: &RepoRef, token: Option<&str>) -> Result<Release, DebloadError> {
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/releases?per_page=10",
+        repo.owner, repo.repo
+    );
+
+    let send = || {
+        let mut request = agent()
+            .get(&url)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28");
+
+        if let Some(token) = token {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
+
+        request.call()
+    };
+
+    let mut response = match with_retry(3, send) {
+        Ok(response) => response,
+        Err(ureq::Error::StatusCode(404)) => {
+            return Err(DebloadError::NoRelease(repo.slug()));
+        }
+        Err(ureq::Error::StatusCode(403)) | Err(ureq::Error::StatusCode(429)) => {
+            return Err(DebloadError::GithubRateLimited);
+        }
+        Err(ureq::Error::StatusCode(code)) => {
+            return Err(DebloadError::GithubFailed(format!(
+                "GitHub a répondu {code}"
+            )));
+        }
+        Err(err) => return Err(transport_error(err)),
+    };
+
+    let body = response
+        .body_mut()
+        .read_to_string()
+        .map_err(|e| DebloadError::GithubFailed(e.to_string()))?;
+
+    parse_newest_release(&body).map_err(|e| match e {
+        DebloadError::NoRelease(_) => DebloadError::NoRelease(repo.slug()),
+        other => other,
+    })
 }
 
 /// Télécharge un fichier en rendant compte de l'avancement.
@@ -285,16 +468,19 @@ pub fn download(
         return Err(DebloadError::UntrustedUrl(asset.url.clone()));
     }
 
-    let mut request = agent()
-        .get(&asset.url)
-        .header("Accept", "application/octet-stream");
-    if let Some(token) = token {
-        request = request.header("Authorization", &format!("Bearer {token}"));
-    }
+    // Seule l'ouverture se retente : une fois les octets en train d'arriver,
+    // rejouer la requête écraserait ce qui a déjà été écrit.
+    let send = || {
+        let mut request = agent()
+            .get(&asset.url)
+            .header("Accept", "application/octet-stream");
+        if let Some(token) = token {
+            request = request.header("Authorization", &format!("Bearer {token}"));
+        }
+        request.call()
+    };
 
-    let mut response = request
-        .call()
-        .map_err(|e| DebloadError::GithubFailed(e.to_string()))?;
+    let mut response = with_retry(3, send).map_err(transport_error)?;
 
     let total = response
         .headers()
@@ -346,6 +532,7 @@ pub fn download(
 mod tests {
     use super::*;
     use crate::runner::{CommandOutput, FakeRunner};
+    use crate::settings::Platform;
 
     fn asset(name: &str) -> Asset {
         Asset {
@@ -512,6 +699,79 @@ mod tests {
     fn a_release_without_deb_yields_nothing() {
         let assets = vec![asset("app.AppImage"), asset("app.rpm")];
         assert!(select_deb_assets(&assets, "amd64").is_empty());
+    }
+
+    #[test]
+    fn each_platform_keeps_only_its_own_files() {
+        let assets = vec![
+            asset("app_1.0_amd64.deb"),
+            asset("app-1.0-x86_64.AppImage"),
+            asset("app_1.0_x64.msi"),
+            asset("app-1.0.dmg"),
+            asset("app-1.0-src.tar.bz2"),
+        ];
+
+        let only = |platform| -> Vec<String> {
+            select_assets(&assets, "amd64", platform)
+                .into_iter()
+                .map(|a| a.name)
+                .collect()
+        };
+
+        assert_eq!(only(Platform::Debian), vec!["app_1.0_amd64.deb"]);
+        assert_eq!(only(Platform::LinuxOther), vec!["app-1.0-x86_64.AppImage"]);
+        assert_eq!(only(Platform::Windows), vec!["app_1.0_x64.msi"]);
+        assert_eq!(only(Platform::MacOs), vec!["app-1.0.dmg"]);
+    }
+
+    #[test]
+    fn windows_still_sorts_by_architecture() {
+        let assets = vec![asset("app_x64.exe"), asset("app_arm64.exe")];
+
+        assert_eq!(
+            select_assets(&assets, "amd64", Platform::Windows)[0].name,
+            "app_x64.exe"
+        );
+        assert_eq!(
+            select_assets(&assets, "arm64", Platform::Windows)[0].name,
+            "app_arm64.exe"
+        );
+    }
+
+    #[test]
+    fn a_release_with_nothing_for_this_platform_comes_back_empty() {
+        let assets = vec![asset("app_1.0_amd64.deb")];
+        assert!(select_assets(&assets, "amd64", Platform::Windows).is_empty());
+    }
+
+    #[test]
+    fn the_newest_release_wins_prereleases_included() {
+        let body = r#"[
+            {"tag_name":"v2.0-beta","prerelease":true,"assets":[]},
+            {"tag_name":"v1.0","prerelease":false,"assets":[]}
+        ]"#;
+
+        let release = parse_newest_release(body).unwrap();
+        assert_eq!(release.tag, "v2.0-beta");
+        assert!(release.prerelease);
+    }
+
+    #[test]
+    fn a_draft_release_is_skipped() {
+        let body = r#"[
+            {"tag_name":"v3.0","draft":true,"assets":[]},
+            {"tag_name":"v2.0","draft":false,"assets":[]}
+        ]"#;
+
+        assert_eq!(parse_newest_release(body).unwrap().tag, "v2.0");
+    }
+
+    #[test]
+    fn an_empty_release_list_is_reported_as_no_release() {
+        assert!(matches!(
+            parse_newest_release("[]").unwrap_err(),
+            DebloadError::NoRelease(_)
+        ));
     }
 
     #[test]

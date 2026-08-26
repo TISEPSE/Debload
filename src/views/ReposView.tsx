@@ -1,22 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 
 import { LogPanel } from "../components/LogPanel";
 import { PackageCard } from "../components/PackageCard";
 import { ProgressBar } from "../components/ProgressBar";
-import { RepoLine, type ReleaseState } from "../components/RepoLine";
+import { RepoLine } from "../components/RepoLine";
 import {
   addRepo,
+  downloadFromRepo,
   formatError,
   installDeb,
   listRepos,
   prepareFromRepo,
-  refreshRepo,
   removeRepo,
 } from "../lib/api";
-import type { DebInfo, LogLine, ProgressEvent, RepoRow } from "../lib/types";
+import { useReleases } from "../lib/useReleases";
+import type { DebInfo, Environment, LogLine, ProgressEvent, RepoRow } from "../lib/types";
 
 interface ReposViewProps {
+  environment: Environment;
   /** Appelé après une installation réussie, pour rafraîchir « Mes paquets ». */
   onInstalled: () => void;
 }
@@ -27,11 +29,12 @@ type Stage =
   | { step: "confirming"; row: RepoRow; info: DebInfo }
   | { step: "installing"; row: RepoRow; info: DebInfo }
   | { step: "done"; row: RepoRow; info: DebInfo }
+  /** Téléchargement seul : rien n'est installé, on dit où le fichier est. */
+  | { step: "saved"; row: RepoRow; path: string }
   | { step: "failed"; message: string };
 
-export function ReposView({ onInstalled }: ReposViewProps) {
+export function ReposView({ environment, onInstalled }: ReposViewProps) {
   const [rows, setRows] = useState<RepoRow[]>([]);
-  const [releases, setReleases] = useState<Record<string, ReleaseState>>({});
   const [loading, setLoading] = useState(true);
   const [stage, setStage] = useState<Stage>({ step: "browsing" });
   const [draft, setDraft] = useState("");
@@ -39,33 +42,26 @@ export function ReposView({ onInstalled }: ReposViewProps) {
   const [progress, setProgress] = useState<ProgressEvent | null>(null);
   const [logs, setLogs] = useState<LogLine[]>([]);
 
-  /** Interroge GitHub pour un dépôt, sans bloquer les autres lignes. */
-  const loadRelease = useCallback(async (slug: string) => {
-    setReleases((previous) => ({ ...previous, [slug]: { status: "loading" } }));
-    try {
-      const release = await refreshRepo(slug);
-      setReleases((previous) => ({ ...previous, [slug]: { status: "ready", release } }));
-    } catch (error) {
-      setReleases((previous) => ({
-        ...previous,
-        [slug]: { status: "error", message: formatError(error) },
-      }));
-    }
-  }, []);
+  const canInstall = environment.canInstall;
+
+  // La liste des slugs pilote le rafraîchissement ; elle ne doit changer
+  // d'identité que lorsque le catalogue change vraiment.
+  const slugs = useMemo(() => rows.map((row) => row.slug), [rows]);
+  const { releases, checking, refreshAll } = useReleases(
+    slugs,
+    environment.settings.autoRefreshMinutes,
+  );
 
   const reload = useCallback(async () => {
-    setLoading(true);
     try {
-      const fetched = await listRepos();
-      setRows(fetched);
-      setLoading(false);
-      // Les lignes s'affichent d'abord, puis se complètent en parallèle.
-      fetched.forEach((row) => void loadRelease(row.slug));
+      setRows(await listRepos());
+      setAddError(null);
     } catch (error) {
       setAddError(formatError(error));
+    } finally {
       setLoading(false);
     }
-  }, [loadRelease]);
+  }, []);
 
   useEffect(() => {
     void reload();
@@ -113,18 +109,32 @@ export function ReposView({ onInstalled }: ReposViewProps) {
     [reload],
   );
 
-  /** Télécharge le paquet et affiche la carte de confirmation. */
-  const prepare = useCallback(async (row: RepoRow, assetName: string | null) => {
-    setStage({ step: "downloading", row });
-    setProgress(null);
-    setLogs([]);
-    try {
-      const info = await prepareFromRepo(row.slug, assetName);
-      setStage({ step: "confirming", row, info });
-    } catch (error) {
-      setStage({ step: "failed", message: formatError(error) });
-    }
-  }, []);
+  /**
+   * Passe à l'acte sur une ligne.
+   *
+   * Sur Debian, Debload télécharge puis affiche la carte de confirmation
+   * avant d'installer. Ailleurs il dépose le fichier et s'arrête là : sans
+   * dpkg, il n'a rien de plus à proposer.
+   */
+  const act = useCallback(
+    async (row: RepoRow, assetName: string | null) => {
+      setStage({ step: "downloading", row });
+      setProgress(null);
+      setLogs([]);
+      try {
+        if (canInstall) {
+          const info = await prepareFromRepo(row.slug, assetName);
+          setStage({ step: "confirming", row, info });
+        } else {
+          const path = await downloadFromRepo(row.slug, assetName);
+          setStage({ step: "saved", row, path });
+        }
+      } catch (error) {
+        setStage({ step: "failed", message: formatError(error) });
+      }
+    },
+    [canInstall],
+  );
 
   const confirm = useCallback(async () => {
     if (stage.step !== "confirming") return;
@@ -182,9 +192,27 @@ export function ReposView({ onInstalled }: ReposViewProps) {
           </section>
         )}
 
+        {stage.step === "saved" && (
+          <section className="result result--success">
+            <h2>Fichier téléchargé</h2>
+            <p>
+              {stage.row.label} a été enregistré ici :
+              <br />
+              <code className="result__path">{stage.path}</code>
+            </p>
+            <p className="settings__hint">
+              Debload s'arrête là sur ce système : ouvre le fichier avec l'outil
+              d'installation de ta distribution.
+            </p>
+            <button type="button" className="button button--primary" onClick={back}>
+              Retour au catalogue
+            </button>
+          </section>
+        )}
+
         {stage.step === "failed" && (
           <section className="result result--error">
-            <h2>Installation interrompue</h2>
+            <h2>{canInstall ? "Installation interrompue" : "Téléchargement interrompu"}</h2>
             <p>{stage.message}</p>
             {logs.length > 0 && (
               <details className="details">
@@ -217,6 +245,20 @@ export function ReposView({ onInstalled }: ReposViewProps) {
         </button>
       </form>
 
+      <div className="repo-bar">
+        <span className="repo-bar__state">
+          {checking ? "Vérification des versions…" : "Versions à jour"}
+        </span>
+        <button
+          type="button"
+          className="repo-bar__action"
+          disabled={checking}
+          onClick={() => void refreshAll(true)}
+        >
+          Vérifier maintenant
+        </button>
+      </div>
+
       {addError && <p className="result result--error">{addError}</p>}
 
       {rows.length === 0 ? (
@@ -230,9 +272,8 @@ export function ReposView({ onInstalled }: ReposViewProps) {
               key={row.slug}
               row={row}
               state={releases[row.slug] ?? { status: "loading" }}
-              onInstall={(assetName) => void prepare(row, assetName)}
+              onInstall={(assetName) => void act(row, assetName)}
               onRemove={() => void drop(row.slug)}
-              onRetry={() => void loadRelease(row.slug)}
             />
           ))}
         </ul>

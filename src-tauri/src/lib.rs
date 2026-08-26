@@ -7,9 +7,11 @@ pub mod launch;
 pub mod pkg;
 pub mod privileged;
 pub mod progress;
+pub mod release_cache;
 pub mod repo_ops;
 pub mod repos;
 pub mod runner;
+pub mod settings;
 
 use std::sync::Arc;
 
@@ -34,6 +36,15 @@ pub fn run() {
                 repos_path: data_dir.join("repos.json"),
                 catalog_path: repos::bundled_path(resource_dir.as_deref()),
                 cache_dir: cache_dir.join("packages"),
+                settings_path: data_dir.join("settings.json"),
+                release_cache_path: cache_dir.join("releases.json"),
+                // Sans dossier de téléchargement déclaré — cas rare, mais il
+                // existe — le dossier personnel fait l'affaire.
+                downloads_dir: app
+                    .path()
+                    .download_dir()
+                    .or_else(|_| app.path().home_dir())
+                    .unwrap_or_else(|_| data_dir.clone()),
             });
             Ok(())
         })
@@ -47,6 +58,10 @@ pub fn run() {
             commands::add_repo,
             commands::remove_repo,
             commands::prepare_from_repo,
+            commands::download_from_repo,
+            commands::get_environment,
+            commands::save_settings,
+            commands::clear_caches,
             commands::uninstall
         ])
         .run(tauri::generate_context!())

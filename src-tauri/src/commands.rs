@@ -11,9 +11,11 @@ use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
 use crate::privileged::PrivilegedApt;
 use crate::progress::ProgressEvent;
+use crate::release_cache;
 use crate::repo_ops::{self, RepoRelease, RepoRow};
 use crate::repos;
 use crate::runner::CommandRunner;
+use crate::settings::{self, Platform, Settings};
 
 /// État partagé injecté par Tauri dans chaque commande.
 pub struct AppState {
@@ -28,6 +30,13 @@ pub struct AppState {
     pub catalog_path: PathBuf,
     /// Où atterrissent les .deb téléchargés.
     pub cache_dir: PathBuf,
+    /// Réglages, dont la plateforme confirmée sur la page d'accueil.
+    pub settings_path: PathBuf,
+    /// Dernières releases connues, pour afficher la page sans attendre.
+    pub release_cache_path: PathBuf,
+    /// Dossier de téléchargement du système, quand Debload ne peut
+    /// qu'y déposer un fichier.
+    pub downloads_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -314,6 +323,117 @@ pub async fn uninstall(
             purge,
             &emit,
         )
+    })
+    .await
+    .map_err(|e| DebloadError::Io(e.to_string()))?
+}
+
+// --- Réglages ---------------------------------------------------------------
+
+/// Ce que l'interface doit savoir du système avant d'afficher quoi que ce soit.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Environment {
+    pub settings: Settings,
+    /// Ce que Debload devine, proposé par défaut sur la page d'accueil.
+    pub detected: Platform,
+    /// Vrai si la plateforme retenue permet d'installer.
+    pub can_install: bool,
+}
+
+#[tauri::command]
+pub fn get_environment(state: State<'_, AppState>) -> Result<Environment, DebloadError> {
+    let loaded = settings::load(&state.settings_path);
+    Ok(Environment {
+        can_install: loaded.platform_or_detected().installs_packages(),
+        detected: settings::detect_platform(),
+        settings: loaded,
+    })
+}
+
+/// Enregistre les réglages et renvoie l'environnement qui en découle.
+///
+/// Changer de plateforme change les fichiers retenus dans chaque release : le
+/// cache est vidé pour que rien de l'ancien choix ne subsiste à l'écran.
+#[tauri::command]
+pub fn save_settings(
+    settings: Settings,
+    state: State<'_, AppState>,
+) -> Result<Environment, DebloadError> {
+    let previous = settings::load(&state.settings_path);
+    settings::save(&state.settings_path, &settings)?;
+
+    if previous.platform_or_detected() != settings.platform_or_detected()
+        || previous.include_prereleases != settings.include_prereleases
+    {
+        release_cache::update(&state.release_cache_path, |cache| cache.clear());
+    }
+
+    Ok(Environment {
+        can_install: settings.platform_or_detected().installs_packages(),
+        detected: settings::detect_platform(),
+        settings,
+    })
+}
+
+/// Oublie les releases connues et les paquets déjà téléchargés.
+///
+/// Sert quand une release a été republiée sous le même tag, ou simplement
+/// pour récupérer la place prise par les .deb du cache.
+#[tauri::command]
+pub fn clear_caches(state: State<'_, AppState>) -> Result<(), DebloadError> {
+    release_cache::update(&state.release_cache_path, |cache| cache.clear());
+
+    // Le dossier peut ne jamais avoir existé : ce n'est pas un échec.
+    if state.cache_dir.is_dir() {
+        std::fs::remove_dir_all(&state.cache_dir).map_err(|e| DebloadError::Io(e.to_string()))?;
+    }
+    Ok(())
+}
+
+/// Télécharge le fichier d'une release sans l'installer.
+///
+/// Le seul geste possible hors de Debian. Renvoie le chemin du fichier
+/// déposé, que l'interface annonce à l'utilisateur.
+#[tauri::command]
+pub async fn download_from_repo(
+    slug: String,
+    asset_name: Option<String>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, DebloadError> {
+    let runner = state.runner.clone();
+    let repos_path = state.repos_path.clone();
+    let settings_path = state.settings_path.clone();
+    let cache_path = state.release_cache_path.clone();
+    let downloads_dir = state.downloads_dir.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let user = repos::load_user(&repos_path);
+        let settings = settings::load(&settings_path);
+
+        let on_progress = |percent: f32| {
+            let _ = app.emit(
+                "download-progress",
+                crate::progress::ProgressEvent {
+                    phase: crate::progress::ProgressPhase::Download,
+                    percent,
+                    message: "Téléchargement du fichier".to_string(),
+                },
+            );
+        };
+
+        repo_ops::fetch_asset(
+            runner.as_ref(),
+            &user,
+            &settings,
+            &cache_path,
+            &downloads_dir,
+            &slug,
+            asset_name.as_deref(),
+            &on_progress,
+        )
+        .map(|path| path.display().to_string())
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
@@ -844,21 +964,38 @@ mod tests {
 pub fn list_repos(state: State<'_, AppState>) -> Result<Vec<RepoRow>, DebloadError> {
     let catalog = repos::load_catalog(&state.catalog_path);
     let user = repos::load_user(&state.repos_path);
-    Ok(repo_ops::rows(state.runner.as_ref(), &catalog, &user))
+    let rows = repo_ops::rows(state.runner.as_ref(), &catalog, &user);
+
+    // Un dépôt retiré n'a plus de raison d'occuper le cache.
+    let slugs: Vec<String> = rows.iter().map(|r| r.slug.clone()).collect();
+    release_cache::update(&state.release_cache_path, |cache| {
+        cache.retain_slugs(&slugs)
+    });
+
+    Ok(rows)
 }
 
 /// Interroge GitHub pour un dépôt.
+/// Interroge GitHub pour un dépôt.
+///
+/// `force` court-circuite le cache : c'est ce que demande le bouton
+/// « Vérifier maintenant », là où le rafraîchissement automatique se contente
+/// de ce qu'il a déjà.
 #[tauri::command]
 pub async fn refresh_repo(
     slug: String,
+    force: bool,
     state: State<'_, AppState>,
 ) -> Result<RepoRelease, DebloadError> {
     let runner = state.runner.clone();
     let repos_path = state.repos_path.clone();
+    let settings_path = state.settings_path.clone();
+    let cache_path = state.release_cache_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let user = repos::load_user(&repos_path);
-        repo_ops::refresh(runner.as_ref(), &user, &slug)
+        let settings = settings::load(&settings_path);
+        repo_ops::refresh(runner.as_ref(), &user, &settings, &cache_path, &slug, force)
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
@@ -894,9 +1031,12 @@ pub async fn prepare_from_repo(
     let runner = state.runner.clone();
     let repos_path = state.repos_path.clone();
     let cache_dir = state.cache_dir.clone();
+    let settings_path = state.settings_path.clone();
+    let cache_path = state.release_cache_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let mut user = repos::load_user(&repos_path);
+        let settings = settings::load(&settings_path);
 
         let on_progress = |percent: f32| {
             let _ = app.emit(
@@ -914,6 +1054,8 @@ pub async fn prepare_from_repo(
             &mut user,
             &repos_path,
             &cache_dir,
+            &settings,
+            &cache_path,
             &slug,
             asset_name.as_deref(),
             &on_progress,

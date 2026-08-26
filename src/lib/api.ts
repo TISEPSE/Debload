@@ -2,10 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   DebInfo,
   DebloadError,
+  Environment,
   ManagedPackage,
   OperationResult,
   RepoRelease,
   RepoRow,
+  Settings,
 } from "./types";
 
 export const inspectDeb = (path: string) => invoke<DebInfo>("inspect_deb", { path });
@@ -21,7 +23,9 @@ export const launchApp = (name: string) => invoke<void>("launch_app", { name });
 
 export const listRepos = () => invoke<RepoRow[]>("list_repos");
 
-export const refreshRepo = (slug: string) => invoke<RepoRelease>("refresh_repo", { slug });
+/** `force` court-circuite le cache et interroge GitHub à coup sûr. */
+export const refreshRepo = (slug: string, force = false) =>
+  invoke<RepoRelease>("refresh_repo", { slug, force });
 
 export const addRepo = (input: string) => invoke<void>("add_repo", { input });
 
@@ -29,6 +33,17 @@ export const removeRepo = (slug: string) => invoke<void>("remove_repo", { slug }
 
 export const prepareFromRepo = (slug: string, assetName: string | null) =>
   invoke<DebInfo>("prepare_from_repo", { slug, assetName });
+
+/** Hors Debian : récupère le fichier et renvoie où il a été déposé. */
+export const downloadFromRepo = (slug: string, assetName: string | null) =>
+  invoke<string>("download_from_repo", { slug, assetName });
+
+export const getEnvironment = () => invoke<Environment>("get_environment");
+
+export const saveSettings = (settings: Settings) =>
+  invoke<Environment>("save_settings", { settings });
+
+export const clearCaches = () => invoke<void>("clear_caches");
 
 /**
  * Traduit une erreur Rust en phrase affichable.
@@ -64,6 +79,8 @@ export function formatError(error: unknown): string {
       return "La dernière release ne contient aucun paquet .deb.";
     case "asset_choice_required":
       return "Plusieurs paquets conviennent : choisis-en un.";
+    case "offline":
+      return "GitHub est injoignable — vérification de la connexion…";
     case "github_rate_limited":
       return "Limite d'appels à GitHub atteinte. Réessaie dans quelques minutes.";
     case "github_failed":
@@ -79,4 +96,29 @@ export function formatError(error: unknown): string {
     default:
       return "Une erreur inattendue s'est produite.";
   }
+}
+
+/**
+ * Code machine d'une erreur Rust, quand il y en a un.
+ *
+ * L'interface s'en sert pour trancher entre une panne passagère, qu'elle
+ * retentera seule, et un refus définitif, qu'il est inutile de rejouer.
+ */
+export function errorCode(error: unknown): string | null {
+  const err = error as Partial<DebloadError>;
+  return typeof err?.code === "string" ? err.code : null;
+}
+
+/** Erreurs qui ne s'arrangeront pas en réessayant. */
+const PERMANENT = new Set([
+  "no_release",
+  "invalid_repo",
+  "no_deb_asset",
+  "untrusted_url",
+]);
+
+/** Vrai si réessayer plus tard a une chance d'aboutir. */
+export function isRetryable(error: unknown): boolean {
+  const code = errorCode(error);
+  return code === null || !PERMANENT.has(code);
 }

@@ -4,18 +4,20 @@
 //! sans attendre le réseau : la liste arrive tout de suite, puis chaque ligne
 //! se complète quand GitHub a répondu.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
 use crate::deb::DebInfo;
 use crate::error::DebloadError;
 use crate::github::{
-    self, fetch_latest_release, host_architecture, parse_repo_ref, Asset, RepoRef,
+    self, fetch_latest_release, fetch_newest_release, parse_repo_ref, Asset, Release, RepoRef,
 };
 use crate::pkg::{is_newer, query_installed};
+use crate::release_cache;
 use crate::repos::{self, Catalog, CatalogEntry, UserRepos};
 use crate::runner::CommandRunner;
+use crate::settings::Settings;
 
 /// Une ligne de la page, telle qu'elle s'affiche avant tout appel réseau.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -45,10 +47,19 @@ pub struct RepoRelease {
     pub version: String,
     pub published_at: Option<String>,
     pub prerelease: bool,
-    /// Paquets .deb installables sur cette machine.
+    /// Fichiers utilisables sur ce système : des .deb sur Debian, l'installeur
+    /// correspondant ailleurs.
     pub assets: Vec<Asset>,
     /// Vrai si cette version dépasse celle installée.
     pub update_available: bool,
+    /// Instant de la dernière réponse de GitHub, en secondes depuis 1970.
+    pub checked_at: u64,
+    /// Vrai quand ces informations sortent du cache faute d'avoir pu joindre
+    /// GitHub : la ligne reste lisible, en annonçant qu'elle date.
+    pub stale: bool,
+    /// Vrai si Debload sait installer ce fichier ici. Ailleurs qu'à Debian il
+    /// ne fait que le télécharger.
+    pub installable: bool,
 }
 
 /// Construit la liste, sans toucher au réseau.
@@ -80,18 +91,20 @@ pub fn rows(runner: &dyn CommandRunner, catalog: &Catalog, user: &UserRepos) -> 
         .collect()
 }
 
-/// Interroge GitHub pour un dépôt et compare à ce qui est installé.
-pub fn refresh(
+/// Habille une release des informations locales : fichiers utilisables ici,
+/// version installée, mise à jour disponible.
+fn describe(
     runner: &dyn CommandRunner,
     user: &UserRepos,
+    settings: &Settings,
     slug: &str,
-) -> Result<RepoRelease, DebloadError> {
-    let repo = parse_repo_ref(slug)?;
-    let token = github::gh_token(runner);
-    let release = fetch_latest_release(&repo, token.as_deref())?;
-
-    let arch = host_architecture(runner);
-    let assets = github::select_deb_assets(&release.assets, &arch);
+    release: &Release,
+    checked_at: u64,
+    stale: bool,
+) -> RepoRelease {
+    let platform = settings.platform_or_detected();
+    let arch = github::cached_host_architecture(runner);
+    let assets = github::select_assets(&release.assets, &arch, platform);
 
     let installed = user.package_for(slug).and_then(|name| {
         query_installed(runner, name)
@@ -107,15 +120,89 @@ pub fn refresh(
         None => false,
     };
 
-    Ok(RepoRelease {
+    RepoRelease {
         slug: slug.to_string(),
-        tag: release.tag,
-        version: release.version,
-        published_at: release.published_at,
+        tag: release.tag.clone(),
+        version: release.version.clone(),
+        published_at: release.published_at.clone(),
         prerelease: release.prerelease,
         assets,
         update_available,
-    })
+        checked_at,
+        stale,
+        installable: platform.installs_packages(),
+    }
+}
+
+/// Interroge GitHub pour un dépôt et compare à ce qui est installé.
+///
+/// Trois chemins, dans cet ordre : une réponse récente déjà en cache évite
+/// l'appel réseau ; sinon on interroge GitHub ; et si le réseau manque, on
+/// ressort la dernière version connue plutôt qu'une ligne d'erreur.
+pub fn refresh(
+    runner: &dyn CommandRunner,
+    user: &UserRepos,
+    settings: &Settings,
+    cache_path: &Path,
+    slug: &str,
+    force: bool,
+) -> Result<RepoRelease, DebloadError> {
+    let repo = parse_repo_ref(slug)?;
+    let max_age = settings.cache_minutes.saturating_mul(60);
+
+    if !force {
+        let cache = release_cache::read(cache_path);
+        if let Some(entry) = cache.get(slug).filter(|_| cache.is_fresh(slug, max_age)) {
+            return Ok(describe(
+                runner,
+                user,
+                settings,
+                slug,
+                &entry.release,
+                entry.fetched_at,
+                false,
+            ));
+        }
+    }
+
+    let token = settings
+        .use_gh_token
+        .then(|| github::cached_gh_token(runner))
+        .flatten();
+
+    let fetched = if settings.include_prereleases {
+        fetch_newest_release(&repo, token.as_deref())
+    } else {
+        fetch_latest_release(&repo, token.as_deref())
+    };
+
+    match fetched {
+        Ok(release) => {
+            let checked_at = release_cache::now();
+            release_cache::update(cache_path, |cache| cache.put(slug, release.clone()));
+            Ok(describe(
+                runner, user, settings, slug, &release, checked_at, false,
+            ))
+        }
+        // Hors ligne : la dernière version connue vaut mieux qu'un message
+        // rouge répété sur chaque ligne du catalogue.
+        Err(DebloadError::Offline(detail)) => {
+            let cache = release_cache::read(cache_path);
+            match cache.get(slug) {
+                Some(entry) => Ok(describe(
+                    runner,
+                    user,
+                    settings,
+                    slug,
+                    &entry.release,
+                    entry.fetched_at,
+                    true,
+                )),
+                None => Err(DebloadError::Offline(detail)),
+            }
+        }
+        Err(other) => Err(other),
+    }
 }
 
 /// Choisit le fichier à télécharger.
@@ -170,15 +257,22 @@ pub fn prepare(
     user: &mut UserRepos,
     user_path: &Path,
     cache_dir: &Path,
+    settings: &Settings,
+    cache_path: &Path,
     slug: &str,
     asset_name: Option<&str>,
     on_progress: &dyn Fn(f32),
 ) -> Result<DebInfo, DebloadError> {
-    let release = refresh(runner, user, slug)?;
+    // La release vient forcément du réseau ici : installer d'après un cache
+    // vieux d'une heure reviendrait à poser une version périmée.
+    let release = refresh(runner, user, settings, cache_path, slug, true)?;
     let asset = choose_asset(&release.assets, asset_name)?;
 
     let destination = cache_dir.join(cache_file_name(slug, &asset.name));
-    let token = github::gh_token(runner);
+    let token = settings
+        .use_gh_token
+        .then(|| github::cached_gh_token(runner))
+        .flatten();
     github::download(&asset, &destination, token.as_deref(), on_progress)?;
 
     let info = crate::deb::read_deb_info(runner, &destination)?;
@@ -189,6 +283,37 @@ pub fn prepare(
     repos::save_user(user_path, user)?;
 
     Ok(info)
+}
+
+/// Récupère le fichier d'une release sans chercher à l'installer.
+///
+/// C'est tout ce que Debload peut honnêtement faire hors de Debian : sans apt
+/// ni dpkg, il dépose l'installeur là où l'utilisateur le retrouvera et le
+/// laisse poursuivre avec les outils de son système.
+#[allow(clippy::too_many_arguments)]
+pub fn fetch_asset(
+    runner: &dyn CommandRunner,
+    user: &UserRepos,
+    settings: &Settings,
+    cache_path: &Path,
+    destination_dir: &Path,
+    slug: &str,
+    asset_name: Option<&str>,
+    on_progress: &dyn Fn(f32),
+) -> Result<PathBuf, DebloadError> {
+    let release = refresh(runner, user, settings, cache_path, slug, true)?;
+    let asset = choose_asset(&release.assets, asset_name)?;
+
+    // Le nom vient du réseau : on le neutralise avant d'en faire un chemin,
+    // exactement comme pour le cache.
+    let destination = destination_dir.join(cache_file_name(slug, &asset.name));
+    let token = settings
+        .use_gh_token
+        .then(|| github::cached_gh_token(runner))
+        .flatten();
+    github::download(&asset, &destination, token.as_deref(), on_progress)?;
+
+    Ok(destination)
 }
 
 /// Ajoute un dépôt à partir de ce que l'utilisateur a saisi.

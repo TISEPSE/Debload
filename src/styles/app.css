@@ -89,14 +89,20 @@ body {
 .app__main {
   flex: 1;
   overflow-y: auto;
-  padding: 28px;
+  /* Un peu plus d'air en bas : la dernière tuile d'une longue liste ne doit
+     pas s'arrêter pile sur le bord de la fenêtre. */
+  padding: 28px 28px 36px;
 }
 
 .view {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  height: 100%;
+  /* « min-height » et non « height » : une hauteur fixe ferait déborder la
+     liste hors de la vue, et le padding bas du conteneur défilant ne
+     s'applique pas à ce qui déborde. Le minimum suffit à la zone de dépôt,
+     qui s'étire par « flex: 1 ». */
+  min-height: 100%;
 }
 
 /* Zone de dépôt */
@@ -680,10 +686,34 @@ body {
   background: var(--surface-raised);
 }
 
+/* Même raison que pour la liste : « accent-color » ne suffit pas, WebKitGTK
+   affichait un point plein sur les choix non retenus, qui semblaient donc
+   cochés. On dessine la pastille nous-mêmes. */
 .choice__input {
-  margin-top: 3px;
-  accent-color: var(--accent);
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   flex-shrink: 0;
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.choice__input:checked {
+  border-color: var(--accent);
+}
+
+.choice__input:checked::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .choice:has(.choice__input:focus-visible) {
@@ -772,15 +802,33 @@ body {
   color: var(--text);
 }
 
+/* WebKitGTK dessine ses propres widgets tant qu'on ne le lui interdit pas :
+   sous Linux, la liste restait claire et illisible sur fond sombre. On coupe
+   l'apparence native, ce qui emporte aussi la flèche — redessinée en fond. */
 .field__control {
+  appearance: none;
+  -webkit-appearance: none;
   min-width: 220px;
-  padding: 8px 10px;
+  padding: 8px 32px 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%239aa0aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
   color: var(--text);
   font: inherit;
   cursor: pointer;
+}
+
+@media (prefers-color-scheme: light) {
+  .field__control {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+
+.field__control:hover:not(:disabled) {
+  border-color: var(--text-dim);
 }
 
 .field__control:focus-visible {
@@ -802,9 +850,42 @@ body {
 }
 
 .toggle__input {
-  margin-top: 3px;
-  accent-color: var(--accent);
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
   flex-shrink: 0;
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.toggle__input:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* La coche : deux côtés d'un carré, pivotés. */
+.toggle__input:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.toggle__input:disabled,
+.choice__input:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .toggle:has(.toggle__input:focus-visible) {

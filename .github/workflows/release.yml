@@ -35,9 +35,9 @@ jobs:
             args: '--bundles msi,nsis'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -99,7 +99,7 @@ jobs:
     if: github.ref_type == 'tag'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Les deux plateformes ont abouti : on sort la release du brouillon.
       - name: Sortir du brouillon

@@ -861,7 +861,10 @@ mod tests {
     #[test]
     fn a_download_is_never_cut_short_by_a_deadline() {
         let timeouts = download_agent().config().timeouts();
-        assert_eq!(timeouts.global, None, "un plafond global tuerait le transfert");
+        assert_eq!(
+            timeouts.global, None,
+            "un plafond global tuerait le transfert"
+        );
         assert_eq!(timeouts.per_call, None);
         assert_eq!(timeouts.recv_body, None);
         // La mise en relation, elle, reste bornée : sans quoi une machine

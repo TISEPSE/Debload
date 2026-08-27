@@ -423,7 +423,10 @@ pub async fn download_from_repo(
                     github::human_size(total)
                 )
             } else {
-                format!("Téléchargement du fichier — {} reçus", github::human_size(done))
+                format!(
+                    "Téléchargement du fichier — {} reçus",
+                    github::human_size(done)
+                )
             };
 
             let _ = app.emit(
@@ -1061,7 +1064,10 @@ pub async fn prepare_from_repo(
                     github::human_size(total)
                 )
             } else {
-                format!("Téléchargement du paquet — {} reçus", github::human_size(done))
+                format!(
+                    "Téléchargement du paquet — {} reçus",
+                    github::human_size(done)
+                )
             };
 
             let _ = app.emit(

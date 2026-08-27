@@ -1,6 +1,6 @@
 [package]
 name = "debload"
-version = "0.1.1"
+version = "0.1.2"
 description = "Installe et désinstalle des paquets .deb"
 authors = ["Baptiste"]
 edition = "2021"

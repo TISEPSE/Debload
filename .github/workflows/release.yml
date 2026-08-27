@@ -24,10 +24,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Ubuntu 22.04 plutôt que la dernière : le binaire est lié à la
-          # glibc du runner, et compiler sur la plus ancienne encore
-          # maintenue le rend installable sur le plus de distributions.
-          - os: ubuntu-22.04
+          # Le binaire est lié à la glibc du runner : compiler sur 24.04
+          # exige GLIBC_2.39 à l'exécution, donc Ubuntu 24.04 ou Debian 13
+          # au minimum. C'est le prix du retrait annoncé du runner 22.04.
+          - os: ubuntu-24.04
             label: Linux (.deb et AppImage)
             args: '--bundles deb,appimage'
           - os: windows-latest
@@ -83,6 +83,9 @@ jobs:
             Ensuite, Debload installe les suivants à votre place.
             L'AppImage fonctionne sans installation : rendez-le exécutable et lancez-le.
 
+            Les binaires Linux sont compilés sur Ubuntu 24.04 et demandent
+            GLIBC 2.39 : il vous faut Ubuntu 24.04, Debian 13 ou plus récent.
+
             **Windows** — exécutez le `.msi` ou le `.exe`.
 
             > Debload installe et désinstalle des paquets Debian. Sur Windows,
@@ -97,7 +100,7 @@ jobs:
     name: Publier la release
     needs: build
     if: github.ref_type == 'tag'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 

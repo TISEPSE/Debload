@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 
 import { LogPanel } from "../components/LogPanel";
 import { PackageCard } from "../components/PackageCard";
@@ -14,8 +13,9 @@ import {
   prepareFromRepo,
   removeRepo,
 } from "../lib/api";
+import { useTransfer } from "../lib/transfer";
 import { useReleases } from "../lib/useReleases";
-import type { DebInfo, Environment, LogLine, ProgressEvent, RepoRow } from "../lib/types";
+import type { Environment, RepoRow } from "../lib/types";
 
 interface ReposViewProps {
   environment: Environment;
@@ -23,24 +23,15 @@ interface ReposViewProps {
   onInstalled: () => void;
 }
 
-type Stage =
-  | { step: "browsing" }
-  | { step: "downloading"; row: RepoRow }
-  | { step: "confirming"; row: RepoRow; info: DebInfo }
-  | { step: "installing"; row: RepoRow; info: DebInfo }
-  | { step: "done"; row: RepoRow; info: DebInfo }
-  /** Téléchargement seul : rien n'est installé, on dit où le fichier est. */
-  | { step: "saved"; row: RepoRow; path: string }
-  | { step: "failed"; message: string };
-
 export function ReposView({ environment, onInstalled }: ReposViewProps) {
   const [rows, setRows] = useState<RepoRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stage, setStage] = useState<Stage>({ step: "browsing" });
   const [draft, setDraft] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<ProgressEvent | null>(null);
-  const [logs, setLogs] = useState<LogLine[]>([]);
+
+  // L'opération en cours est tenue au-dessus des onglets : elle survit à une
+  // visite dans « Mes paquets » ou « Paramètres ».
+  const { stage, progress, logs, start, setStage, reset } = useTransfer();
 
   const canInstall = environment.canInstall;
 
@@ -66,24 +57,6 @@ export function ReposView({ environment, onInstalled }: ReposViewProps) {
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  useEffect(() => {
-    const unlisteners: Array<() => void> = [];
-
-    void listen<ProgressEvent>("download-progress", (event) =>
-      setProgress(event.payload),
-    ).then((fn) => unlisteners.push(fn));
-
-    void listen<ProgressEvent>("install-progress", (event) =>
-      setProgress(event.payload),
-    ).then((fn) => unlisteners.push(fn));
-
-    void listen<LogLine>("install-log", (event) =>
-      setLogs((previous) => [...previous, event.payload]),
-    ).then((fn) => unlisteners.push(fn));
-
-    return () => unlisteners.forEach((fn) => fn());
-  }, []);
 
   const submitAdd = useCallback(
     async (event: React.FormEvent) => {
@@ -118,9 +91,7 @@ export function ReposView({ environment, onInstalled }: ReposViewProps) {
    */
   const act = useCallback(
     async (row: RepoRow, assetName: string | null) => {
-      setStage({ step: "downloading", row });
-      setProgress(null);
-      setLogs([]);
+      start({ step: "downloading", row });
       try {
         if (canInstall) {
           const info = await prepareFromRepo(row.slug, assetName);
@@ -133,14 +104,13 @@ export function ReposView({ environment, onInstalled }: ReposViewProps) {
         setStage({ step: "failed", message: formatError(error) });
       }
     },
-    [canInstall],
+    [canInstall, start, setStage],
   );
 
   const confirm = useCallback(async () => {
     if (stage.step !== "confirming") return;
     const { row, info } = stage;
-    setStage({ step: "installing", row, info });
-    setProgress(null);
+    start({ step: "installing", row, info });
     try {
       await installDeb(info.sourcePath);
       setStage({ step: "done", row, info });
@@ -149,16 +119,12 @@ export function ReposView({ environment, onInstalled }: ReposViewProps) {
     } catch (error) {
       setStage({ step: "failed", message: formatError(error) });
     }
-  }, [stage, onInstalled, reload]);
+  }, [stage, onInstalled, reload, start, setStage]);
 
-  const back = useCallback(() => {
-    setStage({ step: "browsing" });
-    setProgress(null);
-    setLogs([]);
-  }, []);
+  const back = reset;
 
-  if (loading) return <p className="status">Lecture du catalogue…</p>;
-
+  // L'opération en cours passe avant : de retour d'un autre onglet, la vue se
+  // remonte et relit le catalogue, mais c'est le transfert qu'on veut revoir.
   if (stage.step !== "browsing") {
     return (
       <div className="view">
@@ -228,6 +194,8 @@ export function ReposView({ environment, onInstalled }: ReposViewProps) {
       </div>
     );
   }
+
+  if (loading) return <p className="status">Lecture du catalogue…</p>;
 
   return (
     <div className="view">

@@ -86,6 +86,27 @@ body {
   border-bottom-color: var(--accent);
 }
 
+/* Un transfert continue dans « Dépôts » alors qu'on regarde ailleurs. */
+.tabs__busy {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+  animation: tabs-busy 1.4s ease-in-out infinite;
+}
+
+@keyframes tabs-busy {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tabs__busy { animation: none; }
+}
+
 .app__main {
   flex: 1;
   overflow-y: auto;

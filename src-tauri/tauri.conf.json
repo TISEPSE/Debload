@@ -43,7 +43,7 @@
       "deb": {
         "depends": [
           "libwebkit2gtk-4.1-0",
-          "policykit-1",
+          "polkitd | policykit-1",
           "apt",
           "dpkg"
         ]

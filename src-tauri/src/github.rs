@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::OnceLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -254,16 +254,42 @@ pub fn cached_gh_token(runner: &dyn CommandRunner) -> Option<String> {
     TOKEN.get_or_init(|| gh_token(runner)).clone()
 }
 
-/// L'agent HTTP, partagé par toute l'application.
+/// L'agent HTTP des appels à l'API, partagé par toute l'application.
 ///
 /// Un agent par requête rouvrait une connexion et relançait une résolution de
 /// nom à chaque fois. Celui-ci garde son pool : les vingt dépôts du catalogue
 /// se partagent la même connexion à `api.github.com`.
+///
+/// Le plafond de trente secondes vaut pour l'échange complet : une réponse
+/// d'API tient dans quelques kilo-octets, elle n'a aucune raison de traîner.
 fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| {
         ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(30)))
+            .user_agent("Debload")
+            .build()
+            .into()
+    })
+}
+
+/// L'agent réservé aux téléchargements de fichiers.
+///
+/// Il lui faut sa propre configuration : un plafond global tuerait le transfert
+/// en cours de route. Un paquet de 250 Mo sur une ligne à 80 ko/s met près
+/// d'une heure à arriver, et l'utilisateur voyait l'opération s'interrompre à
+/// 1 % sans explication. Seules la connexion et l'attente des en-têtes sont
+/// bornées ici : passé ce point, on laisse les octets arriver aussi longtemps
+/// qu'il le faut.
+fn download_agent() -> &'static ureq::Agent {
+    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    AGENT.get_or_init(|| {
+        ureq::Agent::config_builder()
+            .timeout_global(None)
+            .timeout_per_call(None)
+            .timeout_recv_body(None)
+            .timeout_connect(Some(Duration::from_secs(20)))
+            .timeout_recv_response(Some(Duration::from_secs(60)))
             .user_agent("Debload")
             .build()
             .into()
@@ -457,12 +483,13 @@ pub fn fetch_newest_release(repo: &RepoRef, token: Option<&str>) -> Result<Relea
 
 /// Télécharge un fichier en rendant compte de l'avancement.
 ///
-/// `on_progress` reçoit le pourcentage lorsque la taille est connue.
+/// `on_progress` reçoit le pourcentage, les octets déjà reçus et la taille
+/// totale attendue — zéro quand le serveur ne l'annonce pas.
 pub fn download(
     asset: &Asset,
     destination: &Path,
     token: Option<&str>,
-    on_progress: &dyn Fn(f32),
+    on_progress: &dyn Fn(f32, u64, u64),
 ) -> Result<(), DebloadError> {
     if !is_allowed_download_url(&asset.url) {
         return Err(DebloadError::UntrustedUrl(asset.url.clone()));
@@ -471,7 +498,7 @@ pub fn download(
     // Seule l'ouverture se retente : une fois les octets en train d'arriver,
     // rejouer la requête écraserait ce qui a déjà été écrit.
     let send = || {
-        let mut request = agent()
+        let mut request = download_agent()
             .get(&asset.url)
             .header("Accept", "application/octet-stream");
         if let Some(token) = token {
@@ -500,6 +527,7 @@ pub fn download(
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut written: u64 = 0;
     let mut last_reported = -1_i32;
+    let mut last_emit = Instant::now();
 
     loop {
         let read = reader
@@ -512,20 +540,40 @@ pub fn download(
             .map_err(|e| DebloadError::Io(e.to_string()))?;
         written += read as u64;
 
-        if total > 0 {
-            let percent = (written as f64 / total as f64 * 100.0) as f32;
-            // On n'annonce qu'aux changements de point de pourcentage : inutile
-            // d'inonder l'interface d'événements identiques.
-            let rounded = percent.round() as i32;
-            if rounded != last_reported {
-                last_reported = rounded;
-                on_progress(percent.clamp(0.0, 100.0));
-            }
+        let percent = if total > 0 {
+            (written as f64 / total as f64 * 100.0) as f32
+        } else {
+            0.0
+        };
+
+        // On annonce à chaque point de pourcentage — mais aussi toutes les
+        // demi-secondes : sur un paquet de 250 Mo, un point vaut plusieurs
+        // minutes d'attente, et une barre figée ressemble à une panne.
+        let rounded = percent.round() as i32;
+        if rounded != last_reported || last_emit.elapsed() >= Duration::from_millis(500) {
+            last_reported = rounded;
+            last_emit = Instant::now();
+            on_progress(percent.clamp(0.0, 100.0), written, total);
         }
     }
 
     file.flush().map_err(|e| DebloadError::Io(e.to_string()))?;
     Ok(())
+}
+
+/// Une taille d'octets telle qu'on la lit dans une phrase.
+pub fn human_size(bytes: u64) -> String {
+    const MO: f64 = 1024.0 * 1024.0;
+    const GO: f64 = MO * 1024.0;
+    let bytes = bytes as f64;
+
+    if bytes >= GO {
+        format!("{:.1} Go", bytes / GO).replace('.', ",")
+    } else if bytes >= MO {
+        format!("{:.0} Mo", bytes / MO)
+    } else {
+        format!("{:.0} ko", (bytes / 1024.0).max(1.0))
+    }
 }
 
 #[cfg(test)]
@@ -803,5 +851,40 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["gh"], CommandOutput::fail(1, "gh: command not found"));
         assert_eq!(gh_token(&fake), None);
+    }
+
+    /// Un téléchargement dure ce qu'il dure.
+    ///
+    /// Un plafond global sur l'agent de téléchargement coupait les gros
+    /// paquets en pleine descente : c'est la panne que ce test interdit de
+    /// réintroduire.
+    #[test]
+    fn a_download_is_never_cut_short_by_a_deadline() {
+        let timeouts = download_agent().config().timeouts();
+        assert_eq!(timeouts.global, None, "un plafond global tuerait le transfert");
+        assert_eq!(timeouts.per_call, None);
+        assert_eq!(timeouts.recv_body, None);
+        // La mise en relation, elle, reste bornée : sans quoi une machine
+        // hors réseau resterait bloquée pour toujours.
+        assert!(timeouts.connect.is_some());
+        assert!(timeouts.recv_response.is_some());
+    }
+
+    #[test]
+    fn sizes_read_like_a_sentence() {
+        assert_eq!(human_size(248_479_282), "237 Mo");
+        assert_eq!(human_size(2 * 1024 * 1024 * 1024), "2,0 Go");
+        assert_eq!(human_size(4096), "4 ko");
+        // Jamais « 0 ko » : quelques octets sont déjà quelque chose.
+        assert_eq!(human_size(12), "1 ko");
+    }
+
+    /// Les appels d'API, à l'inverse, gardent leur plafond.
+    #[test]
+    fn an_api_call_still_gives_up_after_thirty_seconds() {
+        assert_eq!(
+            agent().config().timeouts().global,
+            Some(Duration::from_secs(30))
+        );
     }
 }

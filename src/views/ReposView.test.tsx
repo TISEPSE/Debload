@@ -37,7 +37,33 @@ vi.mock("../lib/api", async () => {
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 import { ReposView } from "./ReposView";
+import { TransferProvider, useTransferState } from "../lib/transfer";
 import type { Environment } from "../lib/types";
+
+/**
+ * Monte la vue comme l'application le fait : l'état du transfert vit
+ * au-dessus, dans un composant que changer d'onglet ne démonte pas.
+ */
+function Harness({
+  environment,
+  onInstalled = () => {},
+  showRepos = true,
+}: {
+  environment: Environment;
+  onInstalled?: () => void;
+  showRepos?: boolean;
+}) {
+  const transfer = useTransferState();
+  return (
+    <TransferProvider value={transfer}>
+      {showRepos ? (
+        <ReposView environment={environment} onInstalled={onInstalled} />
+      ) : (
+        <p>Un autre onglet</p>
+      )}
+    </TransferProvider>
+  );
+}
 
 /** Un environnement Debian : Debload y installe pour de bon. */
 const debian: Environment = {
@@ -105,7 +131,7 @@ describe("ReposView", () => {
   });
 
   it("affiche le catalogue livré puis complète chaque ligne", async () => {
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
 
     await waitFor(() => expect(screen.getByText("MailFlow")).toBeTruthy());
     await waitFor(() => expect(screen.getByText(/v0\.1\.9 disponible/)).toBeTruthy());
@@ -131,7 +157,7 @@ describe("ReposView", () => {
       return { ...rel, slug };
     });
 
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
 
     await waitFor(() => expect(refreshRepo).toHaveBeenCalledTimes(12));
     expect(peak).toBeLessThanOrEqual(4);
@@ -145,7 +171,7 @@ describe("ReposView", () => {
         : Promise.resolve(rel),
     );
 
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
 
     await waitFor(() => expect(screen.getByText(/v0\.1\.9 disponible/)).toBeTruthy());
     expect(screen.getByText(/n'a publié aucune release/i)).toBeTruthy();
@@ -158,7 +184,7 @@ describe("ReposView", () => {
         .mockRejectedValueOnce({ code: "offline", detail: "résolution du nom" })
         .mockResolvedValue(rel);
 
-      render(<ReposView environment={debian} onInstalled={() => {}} />);
+      render(<Harness environment={debian} />);
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
@@ -181,7 +207,7 @@ describe("ReposView", () => {
     prepareFromRepo.mockResolvedValue(info);
     installDeb.mockResolvedValue({ package: "mail-flow", version: "0.1.9", launchable: true });
 
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
     fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
 
     await waitFor(() => expect(screen.getByText(/déjà installée/i)).toBeTruthy());
@@ -198,7 +224,7 @@ describe("ReposView", () => {
     refreshRepo.mockResolvedValue({ ...rel, installable: false, updateAvailable: false });
     downloadFromRepo.mockResolvedValue("/home/b/Téléchargements/MailFlow.msi");
 
-    render(<ReposView environment={windows} onInstalled={() => {}} />);
+    render(<Harness environment={windows} />);
     fireEvent.click(await screen.findByRole("button", { name: /télécharger/i }));
 
     await waitFor(() =>
@@ -211,7 +237,7 @@ describe("ReposView", () => {
   it("signale une référence de dépôt invalide sans vider le champ", async () => {
     addRepo.mockRejectedValue({ code: "invalid_repo", detail: "n'importe quoi" });
 
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
     await screen.findByText("MailFlow");
 
     const field = screen.getByLabelText(/ajouter un dépôt github/i);
@@ -225,7 +251,7 @@ describe("ReposView", () => {
   it("ajoute un dépôt et recharge la liste", async () => {
     addRepo.mockResolvedValue(undefined);
 
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
     await screen.findByText("MailFlow");
 
     fireEvent.change(screen.getByLabelText(/ajouter un dépôt github/i), {
@@ -238,7 +264,7 @@ describe("ReposView", () => {
   });
 
   it("force la vérification quand on la demande", async () => {
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
     await screen.findByText("MailFlow");
 
     fireEvent.click(screen.getByRole("button", { name: /vérifier maintenant/i }));
@@ -248,9 +274,32 @@ describe("ReposView", () => {
     );
   });
 
+  it("garde le téléchargement en cours quand on change d'onglet", async () => {
+    // Le backend, lui, n'a jamais rien annulé : c'est l'interface qui oubliait.
+    let finish: (info: unknown) => void = () => {};
+    prepareFromRepo.mockImplementation(
+      () => new Promise((resolve) => (finish = resolve)),
+    );
+
+    const { rerender } = render(<Harness environment={debian} />);
+    fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
+    await waitFor(() => expect(screen.getByText(/téléchargement depuis/i)).toBeTruthy());
+
+    // Passage sur un autre onglet, puis retour.
+    rerender(<Harness environment={debian} showRepos={false} />);
+    rerender(<Harness environment={debian} />);
+
+    // Le téléchargement est toujours là, pas revenu au catalogue.
+    expect(screen.getByText(/téléchargement depuis/i)).toBeTruthy();
+
+    // Et il aboutit normalement.
+    finish(info);
+    await waitFor(() => expect(screen.getByText(/déjà installée/i)).toBeTruthy());
+  });
+
   it("invite à ajouter un dépôt quand le catalogue est vide", async () => {
     listRepos.mockResolvedValue([]);
-    render(<ReposView environment={debian} onInstalled={() => {}} />);
+    render(<Harness environment={debian} />);
     await waitFor(() => expect(screen.getByText(/catalogue est vide/i)).toBeTruthy());
   });
 });

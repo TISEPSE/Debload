@@ -6,6 +6,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::deb::{read_deb_info, validate_deb_path, DebInfo};
 use crate::error::{classify_failure, DebloadError};
+use crate::github;
 use crate::history::{self, HistoryEntry};
 use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
@@ -412,13 +413,25 @@ pub async fn download_from_repo(
         let user = repos::load_user(&repos_path);
         let settings = settings::load(&settings_path);
 
-        let on_progress = |percent: f32| {
+        // La taille voyage dans le libellé : sur un paquet de plusieurs
+        // centaines de méga-octets, un pourcentage seul ne dit pas si ça avance.
+        let on_progress = |percent: f32, done: u64, total: u64| {
+            let message = if total > 0 {
+                format!(
+                    "Téléchargement du fichier — {} sur {}",
+                    github::human_size(done),
+                    github::human_size(total)
+                )
+            } else {
+                format!("Téléchargement du fichier — {} reçus", github::human_size(done))
+            };
+
             let _ = app.emit(
                 "download-progress",
                 crate::progress::ProgressEvent {
                     phase: crate::progress::ProgressPhase::Download,
                     percent,
-                    message: "Téléchargement du fichier".to_string(),
+                    message,
                 },
             );
         };
@@ -1038,13 +1051,25 @@ pub async fn prepare_from_repo(
         let mut user = repos::load_user(&repos_path);
         let settings = settings::load(&settings_path);
 
-        let on_progress = |percent: f32| {
+        // La taille voyage dans le libellé : sur un paquet de plusieurs
+        // centaines de méga-octets, un pourcentage seul ne dit pas si ça avance.
+        let on_progress = |percent: f32, done: u64, total: u64| {
+            let message = if total > 0 {
+                format!(
+                    "Téléchargement du paquet — {} sur {}",
+                    github::human_size(done),
+                    github::human_size(total)
+                )
+            } else {
+                format!("Téléchargement du paquet — {} reçus", github::human_size(done))
+            };
+
             let _ = app.emit(
                 "download-progress",
                 crate::progress::ProgressEvent {
                     phase: crate::progress::ProgressPhase::Download,
                     percent,
-                    message: "Téléchargement du paquet".to_string(),
+                    message,
                 },
             );
         };

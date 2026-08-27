@@ -22,6 +22,15 @@ describe("formatError", () => {
     );
   });
 
+  it("dit ce qu'une panne de transfert veut dire", () => {
+    // Le code `io` remontait jusqu'ici sans traduction : l'utilisateur ne
+    // lisait qu'« une erreur inattendue » là où le téléchargement avait cassé.
+    expect(formatError({ code: "io", detail: "timed out" })).toMatch(
+      /transfert s'est interrompu.*timed out/,
+    );
+    expect(formatError({ code: "io", detail: "" })).toBe("Le transfert s'est interrompu.");
+  });
+
   it("reste lisible face à une erreur inconnue", () => {
     expect(formatError(new Error("boum"))).toMatch(/inattendue/);
   });

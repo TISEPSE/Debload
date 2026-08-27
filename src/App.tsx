@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { formatError, getEnvironment, saveSettings } from "./lib/api";
+import { TransferProvider, isRunning, useTransferState } from "./lib/transfer";
 import type { Environment, Settings } from "./lib/types";
 import { InstallView } from "./views/InstallView";
 import { IntroView } from "./views/IntroView";
@@ -31,6 +32,11 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState<Tab>("repos");
   const [refreshToken, setRefreshToken] = useState(0);
+
+  // Tenu ici, au-dessus des onglets : un téléchargement lancé depuis
+  // « Dépôts » continue d'exister quand on va voir ailleurs.
+  const transfer = useTransferState();
+  const busy = isRunning(transfer.stage);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +125,10 @@ export default function App() {
               onClick={() => setTab(info.id)}
             >
               {info.label}
+              {/* Un point sur « Dépôts » dit qu'un transfert continue ailleurs. */}
+              {info.id === "repos" && busy && tab !== "repos" && (
+                <span className="tabs__busy" aria-label="Transfert en cours" />
+              )}
             </button>
           ))}
         </nav>
@@ -128,7 +138,9 @@ export default function App() {
         {tab === "install" && <InstallView onInstalled={handleInstalled} />}
         {tab === "packages" && <PackagesView refreshToken={refreshToken} />}
         {tab === "repos" && (
-          <ReposView environment={environment} onInstalled={handleInstalled} />
+          <TransferProvider value={transfer}>
+            <ReposView environment={environment} onInstalled={handleInstalled} />
+          </TransferProvider>
         )}
         {tab === "settings" && (
           <SettingsView environment={environment} onSave={persist} />

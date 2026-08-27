@@ -93,6 +93,10 @@ export function formatError(error: unknown): string {
       return `${err.detail} est un paquet système essentiel : Debload refuse de le supprimer.`;
     case "command_failed":
       return err.detail && err.detail.length > 0 ? err.detail : "L'opération a échoué.";
+    case "io":
+      return err.detail
+        ? `Le transfert s'est interrompu : ${err.detail}`
+        : "Le transfert s'est interrompu.";
     default:
       return "Une erreur inattendue s'est produite.";
   }

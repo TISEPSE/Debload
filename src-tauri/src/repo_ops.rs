@@ -261,7 +261,7 @@ pub fn prepare(
     cache_path: &Path,
     slug: &str,
     asset_name: Option<&str>,
-    on_progress: &dyn Fn(f32),
+    on_progress: &dyn Fn(f32, u64, u64),
 ) -> Result<DebInfo, DebloadError> {
     // La release vient forcément du réseau ici : installer d'après un cache
     // vieux d'une heure reviendrait à poser une version périmée.
@@ -299,7 +299,7 @@ pub fn fetch_asset(
     destination_dir: &Path,
     slug: &str,
     asset_name: Option<&str>,
-    on_progress: &dyn Fn(f32),
+    on_progress: &dyn Fn(f32, u64, u64),
 ) -> Result<PathBuf, DebloadError> {
     let release = refresh(runner, user, settings, cache_path, slug, true)?;
     let asset = choose_asset(&release.assets, asset_name)?;

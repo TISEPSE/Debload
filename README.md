@@ -14,8 +14,14 @@ Installe un paquet `.deb` déposé dans sa fenêtre, et désinstalle en un clic 
 - **Mes paquets** — la liste de ce que Debload a installé, avec un bouton de
   désinstallation par ligne, et une option de purge des fichiers de configuration.
 
-Un paquet venu d'un dépôt passe par le même chemin qu'un fichier déposé à la main :
-il est téléchargé, ses métadonnées s'affichent, et tu confirmes avant l'installation.
+Un paquet venu du catalogue s'installe d'un seul clic : tu l'as déjà choisi en
+l'ajoutant, Debload ne te le redemande pas. Clique sur plusieurs lignes et elles
+prennent la file ; l'une s'installe pendant que la suivante se télécharge, et chaque
+ligne dit où elle en est sans jamais recouvrir le reste du catalogue. Une ligne qui
+échoue ne retient pas les autres : elle passe au rouge et propose de réessayer.
+
+Un fichier déposé à la main dans « Installer » garde, lui, sa confirmation : c'est le
+seul endroit qui te dit ce que contient un `.deb` venu d'ailleurs.
 
 Debload ne désinstalle que ce qu'il a installé, et refuse de toucher aux paquets que
 dpkg déclare essentiels.

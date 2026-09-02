@@ -568,6 +568,14 @@ body {
   font-style: italic;
 }
 
+/* L'avancement et la sortie d'apt vivent sur la ligne du dépôt concerné :
+   une installation ne recouvre plus le catalogue, donc rien n'est à refermer
+   pour en lancer une autre. */
+.repo .progress,
+.repo .details {
+  margin-top: 10px;
+}
+
 .repo__stale {
   margin: 4px 0 0;
   color: var(--text-dim);

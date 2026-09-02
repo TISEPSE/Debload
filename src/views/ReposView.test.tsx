@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -37,31 +38,30 @@ vi.mock("../lib/api", async () => {
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 import { ReposView } from "./ReposView";
-import { TransferProvider, useTransferState } from "../lib/transfer";
+import { QueueProvider, useQueueRunner } from "../lib/queueRunner";
 import type { Environment } from "../lib/types";
 
 /**
- * Monte la vue comme l'application le fait : l'état du transfert vit
- * au-dessus, dans un composant que changer d'onglet ne démonte pas.
+ * Monte la vue comme l'application le fait : la file vit au-dessus, dans un
+ * composant que changer d'onglet ne démonte pas.
  */
 function Harness({
   environment,
-  onInstalled = () => {},
   showRepos = true,
 }: {
   environment: Environment;
-  onInstalled?: () => void;
   showRepos?: boolean;
 }) {
-  const transfer = useTransferState();
+  const [token, setToken] = useState(0);
+  const queue = useQueueRunner(environment.canInstall, () => setToken((n) => n + 1));
   return (
-    <TransferProvider value={transfer}>
+    <QueueProvider value={queue}>
       {showRepos ? (
-        <ReposView environment={environment} onInstalled={onInstalled} />
+        <ReposView environment={environment} refreshToken={token} />
       ) : (
         <p>Un autre onglet</p>
       )}
-    </TransferProvider>
+    </QueueProvider>
   );
 }
 
@@ -203,21 +203,18 @@ describe("ReposView", () => {
     }
   });
 
-  it("télécharge puis fait confirmer avant d'installer", async () => {
+  it("installe d'un seul clic, sans rien demander de plus", async () => {
     prepareFromRepo.mockResolvedValue(info);
     installDeb.mockResolvedValue({ package: "mail-flow", version: "0.1.9", launchable: true });
 
     render(<Harness environment={debian} />);
     fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
 
-    await waitFor(() => expect(screen.getByText(/déjà installée/i)).toBeTruthy());
-    expect(installDeb).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: /^installer$/i }));
     await waitFor(() =>
       expect(installDeb).toHaveBeenCalledWith("/cache/MailFlow_0.1.9_amd64.deb"),
     );
-    await waitFor(() => expect(screen.getByText(/est installé/i)).toBeTruthy());
+    // Aucune carte de confirmation ne s'est interposée.
+    expect(screen.queryByText(/déjà installée/i)).toBeNull();
   });
 
   it("se contente de télécharger là où il ne peut pas installer", async () => {
@@ -281,20 +278,99 @@ describe("ReposView", () => {
       () => new Promise((resolve) => (finish = resolve)),
     );
 
+    installDeb.mockResolvedValue({ package: "mail-flow", version: "0.1.9", launchable: true });
+
     const { rerender } = render(<Harness environment={debian} />);
     fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
-    await waitFor(() => expect(screen.getByText(/téléchargement depuis/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("progressbar")).toBeTruthy());
 
     // Passage sur un autre onglet, puis retour.
     rerender(<Harness environment={debian} showRepos={false} />);
     rerender(<Harness environment={debian} />);
 
-    // Le téléchargement est toujours là, pas revenu au catalogue.
-    expect(screen.getByText(/téléchargement depuis/i)).toBeTruthy();
+    // La vue relit son catalogue, mais le téléchargement, lui, n'a rien perdu :
+    // il réapparaît sur sa ligne, à l'avancement où il en était.
+    await waitFor(() => expect(screen.getByRole("progressbar")).toBeTruthy());
+    expect(prepareFromRepo).toHaveBeenCalledTimes(1);
 
     // Et il aboutit normalement.
     finish(info);
-    await waitFor(() => expect(screen.getByText(/déjà installée/i)).toBeTruthy());
+    await waitFor(() => expect(installDeb).toHaveBeenCalled());
+  });
+
+  it("garde le catalogue sous les yeux pendant une opération", async () => {
+    prepareFromRepo.mockImplementation(() => new Promise(() => {}));
+
+    render(<Harness environment={debian} />);
+    fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
+
+    await waitFor(() => expect(screen.getByRole("progressbar")).toBeTruthy());
+    // Le catalogue reste là : une opération ne fait pas disparaître le reste.
+    expect(screen.getByText("MailFlow")).toBeTruthy();
+    expect(screen.getByLabelText(/ajouter un dépôt github/i)).toBeTruthy();
+  });
+
+  it("empile un second dépôt pendant que le premier s'installe", async () => {
+    listRepos.mockResolvedValue([row, { ...row, slug: "TISEPSE/Nexus", label: "Nexus" }]);
+    prepareFromRepo.mockResolvedValue(info);
+
+    let finishFirst: () => void = () => {};
+    installDeb
+      .mockImplementationOnce(
+        () => new Promise((resolve) => (finishFirst = () => resolve({}))),
+      )
+      .mockResolvedValue({});
+
+    render(<Harness environment={debian} />);
+    const actions = await screen.findAllByRole("button", { name: /mettre à jour/i });
+    fireEvent.click(actions[0]);
+    fireEvent.click(actions[1]);
+
+    // Le second n'attend pas un clic de plus : il prend sa place dans la file.
+    await waitFor(() => expect(prepareFromRepo).toHaveBeenCalledTimes(2));
+    expect(installDeb).toHaveBeenCalledTimes(1);
+
+    finishFirst();
+    await waitFor(() => expect(installDeb).toHaveBeenCalledTimes(2));
+  });
+
+  it("laisse la file avancer quand une ligne échoue", async () => {
+    listRepos.mockResolvedValue([row, { ...row, slug: "TISEPSE/Nexus", label: "Nexus" }]);
+    prepareFromRepo.mockImplementation((slug: string) =>
+      slug === "TISEPSE/Nexus"
+        ? Promise.resolve(info)
+        : Promise.reject({ code: "offline", detail: "résolution du nom" }),
+    );
+    installDeb.mockResolvedValue({});
+
+    render(<Harness environment={debian} />);
+    const actions = await screen.findAllByRole("button", { name: /mettre à jour/i });
+    fireEvent.click(actions[0]);
+    fireEvent.click(actions[1]);
+
+    // Le voisin s'installe malgré l'échec, qui reste affiché sur sa ligne.
+    await waitFor(() => expect(installDeb).toHaveBeenCalledTimes(1));
+    expect(screen.getByText(/github est injoignable/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /réessayer/i })).toBeTruthy();
+  });
+
+  it("sort de la file une ligne qui n'a pas encore commencé", async () => {
+    listRepos.mockResolvedValue([row, { ...row, slug: "TISEPSE/Nexus", label: "Nexus" }]);
+    prepareFromRepo.mockImplementation(() => new Promise(() => {}));
+
+    render(<Harness environment={debian} />);
+    const actions = await screen.findAllByRole("button", { name: /mettre à jour/i });
+    fireEvent.click(actions[0]);
+    fireEvent.click(actions[1]);
+
+    // Le premier télécharge, le second attend et peut encore renoncer.
+    const leave = await screen.findByRole("button", { name: /retirer de la file/i });
+    fireEvent.click(leave);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /retirer de la file/i })).toBeNull(),
+    );
+    expect(prepareFromRepo).toHaveBeenCalledTimes(1);
   });
 
   it("invite à ajouter un dépôt quand le catalogue est vide", async () => {

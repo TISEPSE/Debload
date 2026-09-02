@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { formatError, getEnvironment, saveSettings } from "./lib/api";
-import { TransferProvider, isRunning, useTransferState } from "./lib/transfer";
+import { working } from "./lib/queue";
+import { QueueProvider, useQueueRunner } from "./lib/queueRunner";
 import type { Environment, Settings } from "./lib/types";
 import { InstallView } from "./views/InstallView";
 import { IntroView } from "./views/IntroView";
@@ -33,10 +34,14 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("repos");
   const [refreshToken, setRefreshToken] = useState(0);
 
-  // Tenu ici, au-dessus des onglets : un téléchargement lancé depuis
-  // « Dépôts » continue d'exister quand on va voir ailleurs.
-  const transfer = useTransferState();
-  const busy = isRunning(transfer.stage);
+  const handleInstalled = useCallback(() => {
+    setRefreshToken((token) => token + 1);
+  }, []);
+
+  // Tenue ici, au-dessus des onglets : une installation lancée depuis
+  // « Dépôts » continue d'avancer quand on va voir ailleurs.
+  const queue = useQueueRunner(environment?.canInstall ?? false, handleInstalled);
+  const busy = working(queue.jobs);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,10 +61,6 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const handleInstalled = useCallback(() => {
-    setRefreshToken((token) => token + 1);
   }, []);
 
   const persist = useCallback(async (settings: Settings) => {
@@ -125,9 +126,9 @@ export default function App() {
               onClick={() => setTab(info.id)}
             >
               {info.label}
-              {/* Un point sur « Dépôts » dit qu'un transfert continue ailleurs. */}
+              {/* Un point sur « Dépôts » dit que la file avance ailleurs. */}
               {info.id === "repos" && busy && tab !== "repos" && (
-                <span className="tabs__busy" aria-label="Transfert en cours" />
+                <span className="tabs__busy" aria-label="File en cours" />
               )}
             </button>
           ))}
@@ -138,9 +139,9 @@ export default function App() {
         {tab === "install" && <InstallView onInstalled={handleInstalled} />}
         {tab === "packages" && <PackagesView refreshToken={refreshToken} />}
         {tab === "repos" && (
-          <TransferProvider value={transfer}>
-            <ReposView environment={environment} onInstalled={handleInstalled} />
-          </TransferProvider>
+          <QueueProvider value={queue}>
+            <ReposView environment={environment} refreshToken={refreshToken} />
+          </QueueProvider>
         )}
         {tab === "settings" && (
           <SettingsView environment={environment} onSave={persist} />

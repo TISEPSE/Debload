@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RepoLine, sinceLabel, type ReleaseState } from "./RepoLine";
-import type { RepoRelease, RepoRow } from "../lib/types";
+import type { Job, JobState } from "../lib/queue";
+import type { DebInfo, RepoRelease, RepoRow } from "../lib/types";
 
 const row: RepoRow = {
   slug: "TISEPSE/MailFlow",
@@ -35,6 +36,23 @@ function release(over: Partial<RepoRelease> = {}): ReleaseState {
 }
 
 const noop = () => {};
+
+const info: DebInfo = {
+  package: "mail-flow",
+  version: "0.1.9",
+  architecture: "amd64",
+  installedSizeKb: 1024,
+  summary: "Tri Gmail",
+  description: "",
+  maintainer: null,
+  sourcePath: "/cache/MailFlow_0.1.9_amd64.deb",
+  alreadyInstalled: "0.1.8",
+};
+
+/** Une entrée de file portant l'état qu'on veut éprouver. */
+function job(state: JobState): Job {
+  return { row, assetName: null, state };
+}
 
 describe("RepoLine", () => {
   it("annonce une mise à jour et la version installée", () => {
@@ -100,6 +118,113 @@ describe("RepoLine", () => {
     expect(screen.getByText(/aucun fichier utilisable dans v0\.1\.9/i)).toBeTruthy();
     const button = screen.getByRole("button", { name: /^installer$/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+  });
+
+  it("annonce son tour d'attente et laisse encore sortir de la file", () => {
+    const onCancel = vi.fn();
+    render(
+      <RepoLine
+        row={row}
+        state={release()}
+        job={job({ phase: "queued" })}
+        onInstall={noop}
+        onCancel={onCancel}
+        onRemove={noop}
+      />,
+    );
+
+    expect(screen.getByText(/en attente/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /retirer de la file/i }));
+    expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("montre l'avancement du téléchargement sur sa propre ligne", () => {
+    render(
+      <RepoLine
+        row={row}
+        state={release()}
+        job={job({
+          phase: "downloading",
+          progress: { phase: "download", percent: 68, message: "Téléchargement" },
+        })}
+        onInstall={noop}
+        onCancel={noop}
+        onRemove={noop}
+      />,
+    );
+
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("68");
+    // Rien à interrompre une fois les octets partis.
+    expect(screen.queryByRole("button", { name: /retirer de la file/i })).toBeNull();
+  });
+
+  it("dit qu'un paquet téléchargé attend qu'apt se libère", () => {
+    render(
+      <RepoLine
+        row={row}
+        state={release()}
+        job={job({ phase: "ready", info })}
+        onInstall={noop}
+        onCancel={noop}
+        onRemove={noop}
+      />,
+    );
+    expect(screen.getByText(/attend l'installation/i)).toBeTruthy();
+  });
+
+  it("montre l'avancement de l'installation, sans rien à cliquer", () => {
+    render(
+      <RepoLine
+        row={row}
+        state={release()}
+        job={job({ phase: "installing", progress: null, logs: [] })}
+        onInstall={noop}
+        onCancel={noop}
+        onRemove={noop}
+      />,
+    );
+
+    expect(screen.getByRole("progressbar")).toBeTruthy();
+    expect(screen.getByText(/installation…/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /retirer de la file/i })).toBeNull();
+  });
+
+  it("laisse relancer une ligne en échec, sans cacher la sortie d'apt", () => {
+    const onInstall = vi.fn();
+    render(
+      <RepoLine
+        row={row}
+        state={release()}
+        job={job({
+          phase: "failed",
+          message: "GitHub est injoignable — vérification de la connexion…",
+          logs: [{ stream: "stderr", line: "E: dépendance manquante" }],
+        })}
+        onInstall={onInstall}
+        onCancel={noop}
+        onRemove={noop}
+      />,
+    );
+
+    expect(screen.getByText(/github est injoignable/i)).toBeTruthy();
+    expect(screen.getByText(/E: dépendance manquante/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /réessayer/i }));
+    expect(onInstall).toHaveBeenCalledWith(null);
+  });
+
+  it("dit où le fichier a été déposé quand Debload ne peut pas installer", () => {
+    render(
+      <RepoLine
+        row={row}
+        state={release({ installable: false })}
+        job={job({ phase: "saved", path: "/home/b/Téléchargements/MailFlow.msi" })}
+        onInstall={noop}
+        onCancel={noop}
+        onRemove={noop}
+      />,
+    );
+    expect(screen.getByText("/home/b/Téléchargements/MailFlow.msi")).toBeTruthy();
   });
 
   it("propose de télécharger là où Debload ne sait pas installer", () => {

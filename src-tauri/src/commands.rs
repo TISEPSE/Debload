@@ -101,9 +101,10 @@ pub fn inspect(runner: &dyn CommandRunner, path: &str) -> Result<DebInfo, Debloa
 
 /// Installe un .deb via apt, qui résout les dépendances au passage.
 ///
-/// `pkexec` réinitialise l'environnement, d'où le passage par `/usr/bin/env`
-/// pour poser les deux variables qui empêchent apt de poser des questions.
-/// Les arguments restent séparés : aucun shell n'interprète quoi que ce soit.
+/// L'appel lui-même est monté côté root, dans `privileged::apt_call` : il
+/// passe par `/usr/bin/env` pour reposer les variables qui empêchent apt de
+/// poser des questions, que `pkexec` a effacées en réinitialisant
+/// l'environnement. Les arguments restent séparés : aucun shell n'intervient.
 pub fn install(
     runner: &dyn CommandRunner,
     apt: &dyn PrivilegedApt,
@@ -578,7 +579,7 @@ mod tests {
         let privileged = fake
             .calls()
             .into_iter()
-            .find(|c| c[0] == "/usr/bin/apt-get")
+            .find(|c| c.iter().any(|a| a == "/usr/bin/apt-get"))
             .expect("une commande privilégiée doit avoir été lancée");
 
         assert!(privileged.contains(&"/usr/bin/apt-get".to_string()));
@@ -688,7 +689,7 @@ mod tests {
         let call = fake
             .calls()
             .into_iter()
-            .find(|c| c[0] == "/usr/bin/apt-get")
+            .find(|c| c.iter().any(|a| a == "/usr/bin/apt-get"))
             .unwrap();
         assert!(
             call.contains(&"APT::Status-Fd=1".to_string()),
@@ -904,7 +905,7 @@ mod tests {
             let call = fake
                 .calls()
                 .into_iter()
-                .find(|c| c[0] == "/usr/bin/apt-get")
+                .find(|c| c.iter().any(|a| a == "/usr/bin/apt-get"))
                 .unwrap();
             assert!(
                 call.contains(&expected.to_string()),
@@ -938,7 +939,10 @@ mod tests {
         let err = remove_package(&fake, &fake, &hist, "bash", false, &|_| {}).unwrap_err();
         assert!(matches!(err, DebloadError::ProtectedPackage(_)));
 
-        assert!(!fake.calls().iter().any(|c| c[0] == "/usr/bin/apt-get"));
+        assert!(!fake
+            .calls()
+            .iter()
+            .any(|c| c.iter().any(|a| a == "/usr/bin/apt-get")));
         assert!(crate::history::load(&hist).contains("bash"));
     }
 

@@ -80,6 +80,12 @@ impl CommandRunner for RealRunner {
     ) -> Result<CommandOutput, DebloadError> {
         let mut child = Command::new(program)
             .args(args)
+            // Aucune entrée. Une commande qui poserait une question lit une
+            // fin de fichier et prend sa valeur par défaut, au lieu d'attendre
+            // sans fin une réponse que personne ne peut donner. C'est aussi ce
+            // qui empêche apt, sous root, d'hériter du tuyau par lequel
+            // Debload lui parle et d'y avaler les requêtes suivantes.
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -269,10 +275,10 @@ impl FakeRunner {
         request: &crate::privileged::HelperRequest,
         sink: &dyn Fn(crate::commands::OutputEvent),
     ) -> Result<CommandOutput, DebloadError> {
-        let args = crate::privileged::apt_args(request);
+        let (program, args) = crate::privileged::apt_call(request);
         let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
 
-        self.run_streaming("/usr/bin/apt-get", &borrowed, &|stream, line| {
+        self.run_streaming(program, &borrowed, &|stream, line| {
             let event = match crate::progress::parse_status_line(line) {
                 Some(p) if stream == "stdout" => crate::commands::OutputEvent::Progress(p),
                 _ => crate::commands::OutputEvent::Log {
@@ -314,6 +320,17 @@ mod tests {
             .unwrap();
         assert!(out.success());
         assert_eq!(*seen.lock().unwrap(), vec!["stdout:un", "stdout:deux"]);
+    }
+
+    #[test]
+    fn real_runner_leaves_the_child_without_an_input() {
+        // Une commande lancée par Debload n'a personne pour lui répondre :
+        // elle doit lire une fin de fichier, jamais attendre une frappe.
+        let out = RealRunner
+            .run_streaming("/bin/sh", &["-c", "readlink /proc/self/fd/0"], &|_, _| {})
+            .unwrap();
+        assert!(out.success());
+        assert_eq!(out.stdout.trim(), "/dev/null");
     }
 
     #[test]

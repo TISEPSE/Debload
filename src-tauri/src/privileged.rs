@@ -79,6 +79,32 @@ pub trait PrivilegedApt: Send + Sync {
 
 // --- Construction de la ligne de commande ----------------------------------
 
+/// Chemin absolu d'apt : sous root, on ne s'en remet pas au `PATH`.
+pub const APT_GET: &str = "/usr/bin/apt-get";
+
+/// Variables qui interdisent à apt et à ses greffons de poser une question.
+///
+/// `pkexec` repart d'un environnement vide et le processus auxiliaire n'a pas
+/// de terminal. Une question posée là — un fichier de configuration modifié,
+/// la liste des services à redémarrer, les changements à lire — n'a personne
+/// pour la voir ni y répondre : apt attend une réponse qui ne viendra jamais.
+pub const NON_INTERACTIVE_ENV: [&str; 3] = [
+    "DEBIAN_FRONTEND=noninteractive",
+    "APT_LISTCHANGES_FRONTEND=none",
+    "NEEDRESTART_MODE=a",
+];
+
+/// Le programme et les arguments exacts d'une opération privilégiée.
+///
+/// `/usr/bin/env` sert à poser les variables ci-dessus devant apt sans passer
+/// par un shell : chaque argument reste une chaîne, rien n'est interprété.
+pub fn apt_call(request: &HelperRequest) -> (&'static str, Vec<String>) {
+    let mut args: Vec<String> = NON_INTERACTIVE_ENV.iter().map(|v| v.to_string()).collect();
+    args.push(APT_GET.to_string());
+    args.extend(apt_args(request));
+    ("/usr/bin/env", args)
+}
+
 /// Arguments d'apt pour une requête donnée.
 ///
 /// Cette fonction est le seul endroit qui décide de ce qu'apt exécute, et elle
@@ -176,11 +202,11 @@ fn emit(out: &mut impl Write, message: &HelperMessage) {
 
 /// Exécute apt et rend compte au fil de l'eau.
 fn run_apt(runner: &dyn CommandRunner, request: &HelperRequest, out: &mut impl Write) {
-    let args = apt_args(request);
+    let (program, args) = apt_call(request);
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
 
     let sink = Mutex::new(&mut *out);
-    let result = runner.run_streaming("/usr/bin/apt-get", &borrowed, &|stream, line| {
+    let result = runner.run_streaming(program, &borrowed, &|stream, line| {
         let message = if stream == "stdout" {
             match parse_status_line(line) {
                 Some(event) => HelperMessage::Progress(event),
@@ -402,6 +428,42 @@ mod tests {
             args,
             vec!["-o", "APT::Status-Fd=1", "install", "-y", "/tmp/x.deb"]
         );
+    }
+
+    #[test]
+    fn apt_is_called_through_env_without_a_question_frontend() {
+        // `pkexec` repart d'un environnement vide et le processus auxiliaire
+        // n'a pas de terminal : sans ces variables, apt finit par poser une
+        // question que personne ne peut voir ni répondre, et l'installation
+        // ne se termine jamais.
+        let (program, args) = apt_call(&HelperRequest::Install {
+            path: "/tmp/x.deb".into(),
+        });
+
+        assert_eq!(program, "/usr/bin/env");
+        for variable in [
+            "DEBIAN_FRONTEND=noninteractive",
+            "APT_LISTCHANGES_FRONTEND=none",
+            "NEEDRESTART_MODE=a",
+        ] {
+            assert!(
+                args.contains(&variable.to_string()),
+                "{variable} manque dans {args:?}"
+            );
+        }
+
+        let apt = args
+            .iter()
+            .position(|a| a == "/usr/bin/apt-get")
+            .expect("apt-get doit être appelé par son chemin absolu");
+        assert!(
+            args[..apt].iter().all(|a| a.contains('=')),
+            "seules des variables précèdent apt : {args:?}"
+        );
+        let expected = apt_args(&HelperRequest::Install {
+            path: "/tmp/x.deb".into(),
+        });
+        assert_eq!(&args[apt + 1..], expected.as_slice());
     }
 
     #[test]

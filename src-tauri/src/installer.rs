@@ -350,7 +350,9 @@ pub fn install(
         Err(error) if platform == Platform::Windows => {
             let (shell, script) = elevated(&program, &borrowed);
             let script: Vec<&str> = script.iter().map(String::as_str).collect();
-            runner.run_streaming(&shell, &script, on_line).map_err(|_| error)?
+            runner
+                .run_streaming(&shell, &script, on_line)
+                .map_err(|_| error)?
         }
         Err(error) => return Err(error),
     };
@@ -431,7 +433,11 @@ mod tests {
             ("app.msi", Platform::Windows, Family::Msi),
             ("App.dmg", Platform::MacOs, Family::Dmg),
             ("App.pkg", Platform::MacOs, Family::Pkg),
-            ("App-x86_64.AppImage", Platform::LinuxOther, Family::AppImage),
+            (
+                "App-x86_64.AppImage",
+                Platform::LinuxOther,
+                Family::AppImage,
+            ),
             ("app.rpm", Platform::LinuxOther, Family::Rpm),
             // Un .exe n'a aucun sens sous Linux, un .deb passe par apt.
             ("setup.exe", Platform::LinuxOther, Family::Unsupported),
@@ -644,7 +650,14 @@ mod tests {
         fake.on(&["cp"], CommandOutput::ok(""));
         fake.on(&["hdiutil", "detach"], CommandOutput::ok(""));
 
-        install(&fake, &dmg, Platform::MacOs, &places(dir.path()), &|_, _| {}).unwrap();
+        install(
+            &fake,
+            &dmg,
+            Platform::MacOs,
+            &places(dir.path()),
+            &|_, _| {},
+        )
+        .unwrap();
 
         let calls = fake.calls();
         assert!(calls[1][0] == "cp", "l'application doit être copiée");
@@ -669,7 +682,13 @@ mod tests {
         fake.on(&["cp"], CommandOutput::fail(1, "permission refusée"));
         fake.on(&["hdiutil", "detach"], CommandOutput::ok(""));
 
-        let result = install(&fake, &dmg, Platform::MacOs, &places(dir.path()), &|_, _| {});
+        let result = install(
+            &fake,
+            &dmg,
+            Platform::MacOs,
+            &places(dir.path()),
+            &|_, _| {},
+        );
 
         assert!(matches!(result, Err(DebloadError::CommandFailed(_))));
         assert!(fake.calls().last().unwrap().contains(&"detach".to_string()));

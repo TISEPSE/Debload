@@ -513,8 +513,14 @@ mod tests {
     #[test]
     fn what_can_be_installed_depends_on_the_file_as_much_as_the_system() {
         // Windows sait poser un installeur, pas déplier une archive.
-        assert!(installable(&[asset("MailFlow-setup.exe")], Platform::Windows));
-        assert!(!installable(&[asset("MailFlow-linux.tar.gz")], Platform::Windows));
+        assert!(installable(
+            &[asset("MailFlow-setup.exe")],
+            Platform::Windows
+        ));
+        assert!(!installable(
+            &[asset("MailFlow-linux.tar.gz")],
+            Platform::Windows
+        ));
 
         // Sur une distribution sans dpkg, l'AppImage se pose, la tarball non.
         assert!(installable(&[asset("App.AppImage")], Platform::LinuxOther));

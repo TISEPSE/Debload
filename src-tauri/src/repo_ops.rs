@@ -160,19 +160,29 @@ pub fn rows(
         .collect()
 }
 
+/// Ce qu'il faut avoir sous la main pour juger une release : de quoi
+/// interroger le système, les choix de l'utilisateur, et la photographie de ce
+/// qui est déjà installé.
+struct Local<'a> {
+    runner: &'a dyn CommandRunner,
+    user: &'a UserRepos,
+    settings: &'a Settings,
+    apps: &'a [win_apps::InstalledApp],
+}
+
 /// Habille une release des informations locales : fichiers utilisables ici,
 /// version installée, mise à jour disponible.
 fn describe(
-    runner: &dyn CommandRunner,
-    user: &UserRepos,
-    settings: &Settings,
-    apps: &[win_apps::InstalledApp],
+    local: &Local,
     slug: &str,
     release: &Release,
     checked_at: u64,
     stale: bool,
 ) -> RepoRelease {
-    let platform = settings.platform_or_detected();
+    let runner = local.runner;
+    let apps = local.apps;
+
+    let platform = local.settings.platform_or_detected();
     let arch = github::cached_host_architecture(runner);
     let assets = github::select_assets(&release.assets, &arch, platform);
     let can_install = installable(&assets, platform);
@@ -181,7 +191,7 @@ fn describe(
     // normalisation rapproche « HeroicGamesLauncher » de « Heroic Games
     // Launcher », c'est-à-dire du libellé qu'aurait porté la ligne.
     let repo_name = slug.rsplit('/').next().unwrap_or(slug);
-    let package = user.package_for(slug);
+    let package = local.user.package_for(slug);
     let installed = installed_version(runner, platform, package, &[repo_name], apps);
 
     let update_available = match installed.as_deref() {
@@ -221,20 +231,17 @@ pub fn refresh(
 ) -> Result<RepoRelease, DebloadError> {
     let repo = parse_repo_ref(slug)?;
     let max_age = settings.cache_minutes.saturating_mul(60);
+    let local = Local {
+        runner,
+        user,
+        settings,
+        apps,
+    };
 
     if !force {
         let cache = release_cache::read(cache_path);
         if let Some(entry) = cache.get(slug).filter(|_| cache.is_fresh(slug, max_age)) {
-            return Ok(describe(
-                runner,
-                user,
-                settings,
-                apps,
-                slug,
-                &entry.release,
-                entry.fetched_at,
-                false,
-            ));
+            return Ok(describe(&local, slug, &entry.release, entry.fetched_at, false));
         }
     }
 
@@ -253,25 +260,14 @@ pub fn refresh(
         Ok(release) => {
             let checked_at = release_cache::now();
             release_cache::update(cache_path, |cache| cache.put(slug, release.clone()));
-            Ok(describe(
-                runner, user, settings, apps, slug, &release, checked_at, false,
-            ))
+            Ok(describe(&local, slug, &release, checked_at, false))
         }
         // Hors ligne : la dernière version connue vaut mieux qu'un message
         // rouge répété sur chaque ligne du catalogue.
         Err(DebloadError::Offline(detail)) => {
             let cache = release_cache::read(cache_path);
             match cache.get(slug) {
-                Some(entry) => Ok(describe(
-                    runner,
-                    user,
-                    settings,
-                    apps,
-                    slug,
-                    &entry.release,
-                    entry.fetched_at,
-                    true,
-                )),
+                Some(entry) => Ok(describe(&local, slug, &entry.release, entry.fetched_at, true)),
                 None => Err(DebloadError::Offline(detail)),
             }
         }

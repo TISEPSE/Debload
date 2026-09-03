@@ -431,7 +431,13 @@ mod tests {
     #[test]
     fn a_repo_never_installed_shows_no_version() {
         let fake = FakeRunner::new();
-        let rows = rows(&fake, &catalog(), &UserRepos::default(), Platform::Debian, &[]);
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &UserRepos::default(),
+            Platform::Debian,
+            &[],
+        );
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].slug, "TISEPSE/MailFlow");

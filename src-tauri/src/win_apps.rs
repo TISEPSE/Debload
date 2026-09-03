@@ -52,12 +52,15 @@ pub fn list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
     apps
 }
 
+/// Une lecture de la base de registre, avec l'instant où elle a été faite.
+type Snapshot = (Instant, Vec<InstalledApp>);
+
 /// Même chose, mais sans relancer `reg` pour chacun des vingt dépôts du
 /// catalogue. La liste vieillit vite : une application installée pendant que
 /// Debload tourne doit finir par apparaître.
 pub fn cached_list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
     const MAX_AGE: Duration = Duration::from_secs(20);
-    static CACHE: OnceLock<Mutex<Option<(Instant, Vec<InstalledApp>)>>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<Option<Snapshot>>> = OnceLock::new();
 
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());

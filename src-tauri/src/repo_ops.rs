@@ -454,7 +454,10 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["dpkg-query"], CommandOutput::fail(1, "inconnu"));
 
-        assert_eq!(rows(&fake, &catalog(), &user, Platform::Debian)[0].installed, None);
+        assert_eq!(
+            rows(&fake, &catalog(), &user, Platform::Debian)[0].installed,
+            None
+        );
     }
 
     #[test]

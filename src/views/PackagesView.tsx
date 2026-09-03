@@ -10,6 +10,11 @@ import type { LogLine, ManagedPackage, ProgressEvent } from "../lib/types";
 interface PackagesViewProps {
   /** Incrémenté par le parent après une installation, pour forcer un rechargement. */
   refreshToken: number;
+  /**
+   * Vrai là où apt règne : l'inventaire vient alors de ce que Debload a posé.
+   * Ailleurs, il vient du système, et ce qu'on peut en dire est plus mince.
+   */
+  canInstall: boolean;
 }
 
 /** Affiche une date ISO au format court français. */
@@ -20,7 +25,7 @@ function formatDate(iso: string): string {
     : date.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
 }
 
-export function PackagesView({ refreshToken }: PackagesViewProps) {
+export function PackagesView({ refreshToken, canInstall }: PackagesViewProps) {
   const [packages, setPackages] = useState<ManagedPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<ManagedPackage | null>(null);
@@ -88,7 +93,11 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
     [pending, reload],
   );
 
-  if (loading) return <p className="status">Lecture des paquets…</p>;
+  if (loading) {
+    return (
+      <p className="status">{canInstall ? "Lecture des paquets…" : "Lecture du système…"}</p>
+    );
+  }
 
   return (
     <div className="view">
@@ -97,7 +106,7 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
           <p>{error}</p>
           {logs.length > 0 && (
             <details className="details">
-              <summary>Voir la sortie d'apt</summary>
+              <summary>{canInstall ? "Voir la sortie d'apt" : "Voir la sortie du désinstalleur"}</summary>
               <LogPanel logs={logs} />
             </details>
           )}
@@ -110,8 +119,9 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
 
       {packages.length === 0 ? (
         <p className="empty">
-          Aucun paquet géré par Debload pour l'instant. Installe un .deb depuis l'onglet
-          « Installer ».
+          {canInstall
+            ? "Aucun paquet géré par Debload pour l'instant. Installe un .deb depuis l'onglet « Installer »."
+            : "Aucune application du catalogue n'est installée ici. Debload ne montre que ce qu'il saurait installer lui-même ; pour le reste, le panneau de configuration de Windows fait mieux."}
         </p>
       ) : (
         <ul className="packages">
@@ -121,7 +131,11 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
                 <span className="packages__name">{pkg.name}</span>
                 <span className="packages__version">{pkg.version}</span>
                 {pkg.summary && <p className="packages__summary">{pkg.summary}</p>}
-                <p className="packages__date">Installé le {formatDate(pkg.installedAt)}</p>
+                {/* Windows ne date pas toujours ce qu'il a installé : mieux
+                    vaut taire la ligne que d'afficher un « Installé le ». */}
+                {pkg.installedAt && (
+                  <p className="packages__date">Installé le {formatDate(pkg.installedAt)}</p>
+                )}
               </div>
               <button
                 type="button"
@@ -130,7 +144,9 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
                 title={
                   pkg.removable
                     ? undefined
-                    : "Paquet système essentiel : Debload refuse de le supprimer"
+                    : canInstall
+                      ? "Paquet système essentiel : Debload refuse de le supprimer"
+                      : "Cette application n'a laissé aucun désinstalleur au registre"
                 }
                 onClick={() => setPending(pkg)}
               >
@@ -144,6 +160,7 @@ export function PackagesView({ refreshToken }: PackagesViewProps) {
       {pending && (
         <ConfirmDialog
           packageName={pending.name}
+          purgeable={canInstall}
           onConfirm={(purge) => void confirmRemoval(purge)}
           onCancel={() => setPending(null)}
         />

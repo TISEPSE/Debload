@@ -80,6 +80,7 @@ const debian: Environment = {
   },
   detected: "debian",
   canInstall: true,
+  managesApps: true,
 };
 
 const windows: Environment = {
@@ -87,6 +88,8 @@ const windows: Environment = {
   settings: { ...debian.settings, platform: "windows" },
   detected: "windows",
   canInstall: false,
+  // Windows tient sa propre liste : la base de registre.
+  managesApps: true,
 };
 
 const row = {

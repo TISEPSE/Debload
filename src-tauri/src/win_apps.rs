@@ -15,12 +15,35 @@ use std::time::{Duration, Instant};
 use crate::runner::CommandRunner;
 
 /// Une application vue par la base de registre.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct InstalledApp {
     /// `DisplayName`, tel que le panneau de configuration l'affiche.
     pub name: String,
     /// `DisplayVersion`. Absente chez les installeurs qui ne la déclarent pas.
     pub version: Option<String>,
+    /// `UninstallString` : ce que Windows lancerait depuis son panneau de
+    /// configuration. C'est l'installeur lui-même qui l'a écrite.
+    pub uninstall: Option<String>,
+    /// `QuietUninstallString`, quand le fabricant en propose une : la même
+    /// chose, mais avec le drapeau silencieux qu'il a choisi. Toujours
+    /// préférable à un drapeau deviné.
+    pub quiet_uninstall: Option<String>,
+    /// `InstallDate`, au format `AAAAMMJJ` que pose Windows.
+    pub installed_on: Option<String>,
+}
+
+impl InstalledApp {
+    /// La ligne à lancer pour désinstaller, et si elle est déjà silencieuse.
+    ///
+    /// La version silencieuse a la priorité : elle vient du fabricant, là où
+    /// l'autre demanderait de deviner comment la faire taire.
+    pub fn removal(&self) -> Option<(&str, bool)> {
+        match (&self.quiet_uninstall, &self.uninstall) {
+            (Some(quiet), _) => Some((quiet.as_str(), true)),
+            (None, Some(raw)) => Some((raw.as_str(), false)),
+            (None, None) => None,
+        }
+    }
 }
 
 /// Les trois racines où atterrissent les clés de désinstallation : machine en
@@ -84,47 +107,50 @@ pub fn cached_list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
 /// `SystemComponent` — ce sont les redistribuables que Windows lui-même cache.
 pub fn parse_reg_query(output: &str) -> Vec<InstalledApp> {
     let mut apps = Vec::new();
-    let mut name: Option<String> = None;
-    let mut version: Option<String> = None;
+    let mut current = InstalledApp::default();
     let mut hidden = false;
 
     for line in output.lines() {
         let line = line.trim_end();
 
         if line.trim_start().starts_with("HKEY_") {
-            push(&mut apps, &mut name, &mut version, &mut hidden);
+            push(&mut apps, &mut current, &mut hidden);
             continue;
         }
 
         if let Some(value) = value_of(line, "DisplayName") {
-            name = Some(value);
+            current.name = value;
         } else if let Some(value) = value_of(line, "DisplayVersion") {
-            version = Some(value).filter(|v| !v.is_empty());
+            current.version = non_empty(value);
+        } else if let Some(value) = value_of(line, "QuietUninstallString") {
+            current.quiet_uninstall = non_empty(value);
+        } else if let Some(value) = value_of(line, "UninstallString") {
+            current.uninstall = non_empty(value);
+        } else if let Some(value) = value_of(line, "InstallDate") {
+            current.installed_on = non_empty(value);
         } else if let Some(value) = value_of(line, "SystemComponent") {
             hidden |= !value.trim_start_matches("0x").trim_matches('0').is_empty();
         }
     }
 
-    push(&mut apps, &mut name, &mut version, &mut hidden);
+    push(&mut apps, &mut current, &mut hidden);
     apps
 }
 
+fn non_empty(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
+}
+
 /// Clôt le bloc en cours et repart à zéro pour le suivant.
-fn push(
-    apps: &mut Vec<InstalledApp>,
-    name: &mut Option<String>,
-    version: &mut Option<String>,
-    hidden: &mut bool,
-) {
-    if let Some(display) = name.take() {
-        if !*hidden && !display.is_empty() {
-            apps.push(InstalledApp {
-                name: display,
-                version: version.clone(),
-            });
-        }
+///
+/// Une clé sans nom affiché ne décrit rien qu'on puisse montrer, et une clé
+/// marquée `SystemComponent` est de celles que Windows cache lui-même.
+fn push(apps: &mut Vec<InstalledApp>, current: &mut InstalledApp, hidden: &mut bool) {
+    let app = std::mem::take(current);
+
+    if !*hidden && !app.name.is_empty() {
+        apps.push(app);
     }
-    *version = None;
     *hidden = false;
 }
 
@@ -200,11 +226,23 @@ mod tests {
         HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\MailFlow\r\n    \
         DisplayName    REG_SZ    MailFlow\r\n    \
         DisplayVersion    REG_SZ    0.1.8\r\n    \
+        InstallDate    REG_SZ    20260903\r\n    \
+        UninstallString    REG_SZ    \"C:\\Apps\\MailFlow\\Uninstall MailFlow.exe\"\r\n    \
+        QuietUninstallString    REG_SZ    \"C:\\Apps\\MailFlow\\Uninstall MailFlow.exe\" /S\r\n    \
         Publisher    REG_SZ    TISEPSE\r\n\
         \r\n\
         HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Code\r\n    \
         DisplayName    REG_SZ    Visual Studio Code\r\n    \
         DisplayVersion    REG_SZ    1.104.2\r\n";
+
+    /// Une application réduite à son nom : c'est tout ce que regardent les
+    /// tests de rapprochement.
+    fn app(name: &str) -> InstalledApp {
+        InstalledApp {
+            name: name.to_string(),
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn reads_name_and_version_of_each_key() {
@@ -213,6 +251,34 @@ mod tests {
         assert_eq!(apps[0].name, "MailFlow");
         assert_eq!(apps[0].version.as_deref(), Some("0.1.8"));
         assert_eq!(apps[1].name, "Visual Studio Code");
+    }
+
+    #[test]
+    fn keeps_the_line_that_undoes_the_installation() {
+        let apps = parse_reg_query(REG_OUTPUT);
+        assert_eq!(apps[0].installed_on.as_deref(), Some("20260903"));
+
+        // La silencieuse l'emporte : c'est le fabricant qui l'a écrite.
+        let (line, quiet) = apps[0].removal().unwrap();
+        assert!(line.ends_with("/S"), "obtenu : {line}");
+        assert!(quiet);
+    }
+
+    #[test]
+    fn a_noisy_uninstaller_is_still_an_uninstaller() {
+        let out = "HKEY_LOCAL_MACHINE\\X\\Y\n    \
+                   DisplayName    REG_SZ    Truc\n    \
+                   UninstallString    REG_SZ    C:\\Truc\\unins000.exe\n";
+        let apps = parse_reg_query(out);
+
+        let (line, quiet) = apps[0].removal().unwrap();
+        assert_eq!(line, "C:\\Truc\\unins000.exe");
+        assert!(!quiet, "sans ligne silencieuse, il faudra la deviner");
+    }
+
+    #[test]
+    fn an_application_without_an_uninstaller_cannot_be_removed() {
+        assert!(app("Truc").removal().is_none());
     }
 
     #[test]
@@ -268,19 +334,13 @@ mod tests {
 
     #[test]
     fn a_version_glued_to_the_name_still_matches() {
-        let apps = vec![InstalledApp {
-            name: "MailFlow 0.1.8".into(),
-            version: None,
-        }];
+        let apps = vec![app("MailFlow 0.1.8")];
         assert!(find(&apps, &["MailFlow"]).is_some());
     }
 
     #[test]
     fn a_longer_name_is_another_application() {
-        let apps = vec![InstalledApp {
-            name: "MailFlow Pro".into(),
-            version: None,
-        }];
+        let apps = vec![app("MailFlow Pro")];
         assert!(find(&apps, &["MailFlow"]).is_none());
     }
 

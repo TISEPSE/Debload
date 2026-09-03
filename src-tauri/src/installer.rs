@@ -165,6 +165,110 @@ fn quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "''"))
 }
 
+/// Découpe une ligne de commande Windows en arguments.
+///
+/// Le registre y range un chemin et ses drapeaux dans une seule chaîne, les
+/// guillemets protégeant les espaces. On les dénoue ici, une fois, et plus
+/// aucun shell n'intervient ensuite.
+pub fn split_command_line(raw: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quoted = false;
+
+    for c in raw.chars() {
+        match c {
+            '"' => quoted = !quoted,
+            c if c.is_whitespace() && !quoted => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    args
+}
+
+/// La commande qui défait une installation Windows.
+///
+/// Trois cas. Un paquet MSI se retire par `msiexec /x`, jamais par la ligne du
+/// registre, qui dit `/I` — c'est-à-dire « modifier ». Une ligne déjà
+/// silencieuse se lance telle quelle : le fabricant l'a écrite pour ça. Et
+/// faute de silencieuse, on reconnaît le désinstalleur à sa signature, comme à
+/// l'installation — sans signature, sa fenêtre s'ouvre.
+pub fn removal_command(raw: &str, quiet: bool, head: &[u8]) -> Option<(String, Vec<String>)> {
+    let argv = split_command_line(raw);
+    let (program, rest) = argv.split_first()?;
+
+    if is_msiexec(program) {
+        let code = rest.iter().find_map(|arg| product_code(arg))?;
+        return Some((
+            "msiexec".to_string(),
+            vec![
+                "/x".to_string(),
+                code,
+                "/qb".to_string(),
+                "/norestart".to_string(),
+            ],
+        ));
+    }
+
+    let mut args: Vec<String> = rest.to_vec();
+    if !quiet {
+        let silent = match detect_exe(head) {
+            Family::Nsis => vec!["/S".to_string()],
+            Family::Inno => vec![
+                "/VERYSILENT".to_string(),
+                "/SUPPRESSMSGBOXES".to_string(),
+                "/NORESTART".to_string(),
+            ],
+            _ => Vec::new(),
+        };
+        args.extend(silent);
+    }
+
+    Some((program.clone(), args))
+}
+
+fn is_msiexec(program: &str) -> bool {
+    let name = program.rsplit(['\\', '/']).next().unwrap_or(program);
+    name.eq_ignore_ascii_case("msiexec") || name.eq_ignore_ascii_case("msiexec.exe")
+}
+
+/// Le code produit `{…}` d'un paquet MSI, qu'il soit seul ou collé au drapeau.
+fn product_code(arg: &str) -> Option<String> {
+    let start = arg.find('{')?;
+    let code = &arg[start..];
+    code.ends_with('}').then(|| code.to_string())
+}
+
+/// Désinstalle une application Windows par la ligne qu'elle a laissée.
+pub fn uninstall(
+    runner: &dyn CommandRunner,
+    raw: &str,
+    quiet: bool,
+    on_line: &dyn Fn(&str, &str),
+) -> Result<(), DebloadError> {
+    let program = split_command_line(raw)
+        .into_iter()
+        .next()
+        .ok_or_else(|| DebloadError::NotInstallable(raw.to_string()))?;
+
+    // La signature ne se lit que si le désinstalleur est un fichier à nous :
+    // `msiexec` est un outil du système, et n'en a pas besoin.
+    let head = read_head(Path::new(&program));
+    let (program, args) = removal_command(raw, quiet, &head)
+        .ok_or_else(|| DebloadError::NotInstallable(raw.to_string()))?;
+
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_and_check(runner, &program, &borrowed, true, on_line)
+}
+
 /// Le gestionnaire de paquets RPM présent sur la machine.
 ///
 /// Trois familles se partagent le monde RPM et ne s'appellent pas pareil ;
@@ -340,15 +444,29 @@ pub fn install(
 
     let (program, args) = call.ok_or_else(|| DebloadError::NotInstallable(file_name(path)))?;
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
-    let attempt = runner.run_streaming(&program, &borrowed, on_line);
+    let elevate = platform == Platform::Windows;
 
-    let out = match attempt {
+    run_and_check(runner, &program, &borrowed, elevate, on_line)
+}
+
+/// Lance une commande et juge son issue.
+///
+/// `elevate` autorise une seconde tentative par l'invite de Windows. Elle ne
+/// sert que lorsque le processus n'a pas démarré du tout : c'est ainsi que
+/// Windows refuse un programme qui exige des droits d'administrateur, avant
+/// même qu'il existe. Un programme qui a démarré puis échoué a déjà répondu,
+/// et le relancer ne dirait rien de plus.
+fn run_and_check(
+    runner: &dyn CommandRunner,
+    program: &str,
+    args: &[&str],
+    elevate: bool,
+    on_line: &dyn Fn(&str, &str),
+) -> Result<(), DebloadError> {
+    let out = match runner.run_streaming(program, args, on_line) {
         Ok(out) => out,
-        // Le processus n'a pas démarré. Sous Windows, c'est le plus souvent
-        // qu'il exige les droits d'administrateur : on redemande, cette fois
-        // par l'invite du système.
-        Err(error) if platform == Platform::Windows => {
-            let (shell, script) = elevated(&program, &borrowed);
+        Err(error) if elevate => {
+            let (shell, script) = elevated(program, args);
             let script: Vec<&str> = script.iter().map(String::as_str).collect();
             runner
                 .run_streaming(&shell, &script, on_line)
@@ -692,6 +810,83 @@ mod tests {
 
         assert!(matches!(result, Err(DebloadError::CommandFailed(_))));
         assert!(fake.calls().last().unwrap().contains(&"detach".to_string()));
+    }
+
+    #[test]
+    fn splits_a_command_line_the_way_windows_wrote_it() {
+        let argv = split_command_line("\"C:\\Apps\\Mail Flow\\Uninstall.exe\" /S");
+        assert_eq!(argv, vec!["C:\\Apps\\Mail Flow\\Uninstall.exe", "/S"]);
+
+        // Sans guillemets non plus, rien ne se perd.
+        let argv = split_command_line("C:\\Truc\\unins000.exe");
+        assert_eq!(argv, vec!["C:\\Truc\\unins000.exe"]);
+        assert!(split_command_line("   ").is_empty());
+    }
+
+    #[test]
+    fn a_quiet_line_is_launched_as_the_maker_wrote_it() {
+        let raw = "\"C:\\Apps\\MailFlow\\Uninstall MailFlow.exe\" /S";
+        let (program, args) = removal_command(raw, true, b"").unwrap();
+
+        assert_eq!(program, "C:\\Apps\\MailFlow\\Uninstall MailFlow.exe");
+        assert_eq!(args, vec!["/S"]);
+    }
+
+    #[test]
+    fn a_noisy_uninstaller_is_recognised_like_an_installer() {
+        let raw = "C:\\Apps\\MailFlow\\Uninstall.exe";
+        let (_, args) = removal_command(raw, false, b"MZ NullsoftInst").unwrap();
+        assert_eq!(args, vec!["/S"]);
+
+        // Sans signature, aucun drapeau : sa fenêtre s'ouvrira.
+        let (_, args) = removal_command(raw, false, b"MZ inconnu").unwrap();
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn an_msi_is_removed_by_its_product_code() {
+        // Le registre écrit « /I », qui veut dire modifier ; retirer, c'est
+        // « /X », et Debload ne recopie donc pas la ligne telle quelle.
+        let raw = "MsiExec.exe /I{A1B2C3D4-0000-1111-2222-333344445555}";
+        let (program, args) = removal_command(raw, false, b"").unwrap();
+
+        assert_eq!(program, "msiexec");
+        assert_eq!(args[0], "/x");
+        assert_eq!(args[1], "{A1B2C3D4-0000-1111-2222-333344445555}");
+        assert!(args.contains(&"/qb".to_string()));
+    }
+
+    #[test]
+    fn an_msi_line_without_a_product_code_leads_nowhere() {
+        assert!(removal_command("MsiExec.exe /I", false, b"").is_none());
+        assert!(removal_command("", false, b"").is_none());
+    }
+
+    #[test]
+    fn uninstalling_runs_the_line_from_the_registry() {
+        let fake = FakeRunner::new();
+        fake.on(&["Uninstall MailFlow.exe"], CommandOutput::ok(""));
+
+        let raw = "\"C:\\Apps\\MailFlow\\Uninstall MailFlow.exe\" /S";
+        uninstall(&fake, raw, true, &|_, _| {}).unwrap();
+
+        let call = fake.calls().into_iter().next().unwrap();
+        assert_eq!(call[0], "C:\\Apps\\MailFlow\\Uninstall MailFlow.exe");
+        assert_eq!(call[1], "/S");
+    }
+
+    #[test]
+    fn an_uninstaller_that_fails_says_why() {
+        let fake = FakeRunner::new();
+        fake.on(&["unins000.exe"], CommandOutput::fail(1, "fichier verrouillé"));
+
+        let raw = "C:\\Truc\\unins000.exe";
+        let err = uninstall(&fake, raw, true, &|_, _| {}).unwrap_err();
+
+        assert_eq!(
+            err,
+            DebloadError::CommandFailed("fichier verrouillé".to_string())
+        );
     }
 
     #[test]

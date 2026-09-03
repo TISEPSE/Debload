@@ -14,17 +14,47 @@ type Tab = "install" | "packages" | "repos" | "settings";
 
 interface TabInfo {
   id: Tab;
-  label: string;
-  /** Faux pour les onglets qui n'ont de sens qu'avec apt et dpkg. */
-  needsInstall: boolean;
+  /** Ce que l'onglet exige du système pour avoir un sens. */
+  needs: "apt" | "inventory" | null;
 }
 
 const TABS: TabInfo[] = [
-  { id: "install", label: "Installer", needsInstall: true },
-  { id: "packages", label: "Mes paquets", needsInstall: true },
-  { id: "repos", label: "Dépôts", needsInstall: false },
-  { id: "settings", label: "Paramètres", needsInstall: false },
+  // Déposer un .deb n'a de sens que là où apt saurait l'installer ; en
+  // revanche l'inventaire tient dès que le système en garde un.
+  { id: "install", needs: "apt" },
+  { id: "packages", needs: "inventory" },
+  { id: "repos", needs: null },
+  { id: "settings", needs: null },
 ];
+
+/** Vrai si cet onglet a quelque chose à montrer sur ce système. */
+function visible(info: TabInfo, environment: Environment): boolean {
+  switch (info.needs) {
+    case "apt":
+      return environment.canInstall;
+    case "inventory":
+      return environment.managesApps;
+    case null:
+      return true;
+  }
+}
+
+/**
+ * Le nom de l'onglet d'inventaire suit ce qu'il contient : des paquets là où
+ * apt les a posés, des applications là où le système les a installées.
+ */
+function tabLabel(info: TabInfo, environment: Environment): string {
+  switch (info.id) {
+    case "install":
+      return "Installer";
+    case "packages":
+      return environment.canInstall ? "Mes paquets" : "Mes applications";
+    case "repos":
+      return "Dépôts";
+    case "settings":
+      return "Paramètres";
+  }
+}
 
 export default function App() {
   const [environment, setEnvironment] = useState<Environment | null>(null);
@@ -69,9 +99,12 @@ export default function App() {
     try {
       const updated = await saveSettings(settings);
       setEnvironment(updated);
-      // Changer de système peut retirer l'onglet ouvert : on retombe sur
-      // celui qui existe partout.
-      if (!updated.canInstall) setTab((current) => (current === "settings" ? current : "repos"));
+      // Changer de système peut retirer l'onglet ouvert : on retombe alors
+      // sur « Dépôts », qui existe partout.
+      setTab((current) => {
+        const info = TABS.find((tab) => tab.id === current);
+        return info && visible(info, updated) ? current : "repos";
+      });
     } catch (error) {
       setSaveError(formatError(error));
       throw error;
@@ -109,7 +142,7 @@ export default function App() {
     );
   }
 
-  const visibleTabs = TABS.filter((info) => environment.canInstall || !info.needsInstall);
+  const visibleTabs = TABS.filter((info) => visible(info, environment));
 
   return (
     <div className="app">
@@ -125,7 +158,7 @@ export default function App() {
               className={`tabs__tab${tab === info.id ? " tabs__tab--active" : ""}`}
               onClick={() => setTab(info.id)}
             >
-              {info.label}
+              {tabLabel(info, environment)}
               {/* Un point sur « Dépôts » dit que la file avance ailleurs. */}
               {info.id === "repos" && busy && tab !== "repos" && (
                 <span className="tabs__busy" aria-label="File en cours" />
@@ -137,7 +170,9 @@ export default function App() {
 
       <main className="app__main">
         {tab === "install" && <InstallView onInstalled={handleInstalled} />}
-        {tab === "packages" && <PackagesView refreshToken={refreshToken} />}
+        {tab === "packages" && (
+          <PackagesView refreshToken={refreshToken} canInstall={environment.canInstall} />
+        )}
         {tab === "repos" && (
           <QueueProvider value={queue}>
             <ReposView environment={environment} refreshToken={refreshToken} />

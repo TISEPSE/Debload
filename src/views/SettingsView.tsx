@@ -98,8 +98,12 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
 
         {!environment.canInstall && (
           <p className="settings__notice">
-            Sur ce système, Debload n'a ni apt ni dpkg : les onglets « Installer » et
-            « Mes paquets » ne s'affichent pas, et le catalogue propose le téléchargement.
+            Sur ce système, Debload n'a ni apt ni dpkg : l'onglet « Installer », qui attend
+            un .deb, ne s'affiche pas. Le catalogue, lui, télécharge le fichier qui convient
+            et le confie à l'installeur du système.
+            {environment.managesApps
+              ? " « Mes applications » montre ce que le système déclare installé du catalogue."
+              : " Rien ne tient ici la liste de ce qui est installé : Debload ne peut donc pas désinstaller."}
           </p>
         )}
       </section>

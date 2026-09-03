@@ -21,6 +21,7 @@ const environment: Environment = {
   },
   detected: "debian",
   canInstall: true,
+  managesApps: true,
 };
 
 describe("SettingsView", () => {

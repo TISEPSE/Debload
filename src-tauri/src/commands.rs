@@ -15,9 +15,10 @@ use crate::privileged::PrivilegedApt;
 use crate::progress::ProgressEvent;
 use crate::release_cache;
 use crate::repo_ops::{self, RepoRelease, RepoRow};
-use crate::repos;
+use crate::repos::{self, CatalogEntry};
 use crate::runner::CommandRunner;
 use crate::settings::{self, Platform, Settings};
+use crate::win_apps::{self, InstalledApp};
 
 /// État partagé injecté par Tauri dans chaque commande.
 pub struct AppState {
@@ -185,6 +186,106 @@ pub fn install_natively(
     installer::install(runner, Path::new(path), platform, places, &on_line)
 }
 
+/// Les applications du catalogue que Windows déclare installées.
+///
+/// C'est la limite que Debload se donne : il ne montre, et ne propose de
+/// retirer, que ce qu'il aurait su installer lui-même. Pour tout le reste, le
+/// panneau de configuration de Windows est là et fait mieux.
+fn catalogued_apps(
+    runner: &dyn CommandRunner,
+    catalog_path: &Path,
+    repos_path: &Path,
+) -> Vec<(CatalogEntry, InstalledApp)> {
+    let catalog = repos::load_catalog(catalog_path);
+    let user = repos::load_user(repos_path);
+    let apps = win_apps::list(runner);
+
+    repos::effective(&catalog, &user)
+        .into_iter()
+        .filter_map(|entry| {
+            let label = entry.label.clone().unwrap_or_else(|| entry.repo.clone());
+            let names = [label.as_str(), entry.repo.as_str()];
+            let found = win_apps::find(&apps, &names)?.clone();
+            Some((entry, found))
+        })
+        .collect()
+}
+
+/// Convertit la date compacte de Windows en date que l'interface sait lire.
+///
+/// Le registre écrit `20260903` ; tout ce qui ne suit pas cette forme est
+/// rendu tel quel, faute de savoir ce que c'est.
+fn readable_date(compact: &str) -> String {
+    let digits = compact.len() == 8 && compact.chars().all(|c| c.is_ascii_digit());
+    if digits {
+        format!("{}-{}-{}", &compact[0..4], &compact[4..6], &compact[6..8])
+    } else {
+        compact.to_string()
+    }
+}
+
+/// Ce que Debload retrouve, sur Windows, des applications de son catalogue.
+///
+/// L'inventaire ne vient pas d'un historique à lui : il n'a rien installé
+/// lui-même, c'est l'installeur du système qui a travaillé. Tout se relit donc
+/// dans la base de registre, à chaque fois.
+pub fn list_windows(
+    runner: &dyn CommandRunner,
+    catalog_path: &Path,
+    repos_path: &Path,
+) -> Vec<ManagedPackage> {
+    catalogued_apps(runner, catalog_path, repos_path)
+        .into_iter()
+        .map(|(entry, app)| ManagedPackage {
+            name: app.name,
+            version: app.version.unwrap_or_default(),
+            // Windows ne déclare ni l'architecture ni le fichier d'origine :
+            // l'interface n'en montre pas, et Debload n'en invente pas.
+            architecture: String::new(),
+            source_file: String::new(),
+            installed_at: app.installed_on.as_deref().map(readable_date).unwrap_or_default(),
+            summary: entry.description.unwrap_or_default(),
+            // Une application sans ligne de désinstallation existe : elle ne
+            // se retire simplement pas d'ici.
+            removable: app.uninstall.is_some() || app.quiet_uninstall.is_some(),
+        })
+        .collect()
+}
+
+/// Retire une application Windows par la ligne qu'elle a laissée au registre.
+pub fn remove_windows_app(
+    runner: &dyn CommandRunner,
+    catalog_path: &Path,
+    repos_path: &Path,
+    name: &str,
+    sink: &dyn Fn(OutputEvent),
+) -> Result<OperationResult, DebloadError> {
+    let (_, app) = catalogued_apps(runner, catalog_path, repos_path)
+        .into_iter()
+        .find(|(_, app)| app.name == name)
+        // Hors catalogue, Debload ne se mêle de rien : c'est la même règle que
+        // sur Debian, où il ne désinstalle que ce qu'il a installé.
+        .ok_or_else(|| DebloadError::NotManaged(name.to_string()))?;
+
+    let (raw, quiet) = app
+        .removal()
+        .ok_or_else(|| DebloadError::NotInstallable(app.name.clone()))?;
+
+    let on_line = |stream: &str, line: &str| {
+        sink(OutputEvent::Log {
+            stream: stream.to_string(),
+            line: line.to_string(),
+        });
+    };
+    installer::uninstall(runner, raw, quiet, &on_line)?;
+
+    Ok(OperationResult {
+        package: app.name.clone(),
+        version: app.version.clone().unwrap_or_default(),
+        launchable: false,
+    })
+}
+
 /// Liste les paquets gérés par Debload, après réconciliation avec dpkg.
 ///
 /// Une entrée dont le paquet a été supprimé en dehors de Debload est retirée
@@ -321,9 +422,21 @@ pub fn launch_app(name: String, state: State<'_, AppState>) -> Result<(), Debloa
     launch::launch(state.runner.as_ref(), &name)
 }
 
+/// L'inventaire, d'où qu'il vienne.
+///
+/// Sur Debian, l'historique de Debload confronté à dpkg. Sous Windows, le
+/// catalogue confronté à la base de registre — il n'y a pas d'historique, rien
+/// n'ayant été posé par Debload lui-même.
 #[tauri::command]
 pub fn list_managed(state: State<'_, AppState>) -> Result<Vec<ManagedPackage>, DebloadError> {
-    list(state.runner.as_ref(), &state.history_path)
+    let runner = state.runner.as_ref();
+    let platform = settings::load(&state.settings_path).platform_or_detected();
+
+    if platform == Platform::Windows {
+        return Ok(list_windows(runner, &state.catalog_path, &state.repos_path));
+    }
+
+    list(runner, &state.history_path)
 }
 
 #[tauri::command]
@@ -336,6 +449,9 @@ pub async fn uninstall(
     let runner = state.runner.clone();
     let apt = state.apt.clone();
     let history_path = state.history_path.clone();
+    let settings_path = state.settings_path.clone();
+    let catalog_path = state.catalog_path.clone();
+    let repos_path = state.repos_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
         let emit = |event: OutputEvent| match event {
@@ -346,6 +462,14 @@ pub async fn uninstall(
                 let _ = app.emit("uninstall-log", LogLine { stream, line });
             }
         };
+
+        let platform = settings::load(&settings_path).platform_or_detected();
+        if platform == Platform::Windows {
+            // `purge` n'a pas d'équivalent : c'est le désinstalleur de
+            // l'application qui décide de ce qu'il laisse derrière lui.
+            return remove_windows_app(runner.as_ref(), &catalog_path, &repos_path, &name, &emit);
+        }
+
         remove_package(
             runner.as_ref(),
             apt.as_ref(),
@@ -368,15 +492,21 @@ pub struct Environment {
     pub settings: Settings,
     /// Ce que Debload devine, proposé par défaut sur la page d'accueil.
     pub detected: Platform,
-    /// Vrai si la plateforme retenue permet d'installer.
+    /// Vrai si la plateforme retenue permet d'installer un .deb déposé, et de
+    /// suivre ce qu'apt a posé.
     pub can_install: bool,
+    /// Vrai si Debload sait dire ce qui est installé ici, et le retirer :
+    /// dpkg sur Debian, la base de registre sous Windows.
+    pub manages_apps: bool,
 }
 
 #[tauri::command]
 pub fn get_environment(state: State<'_, AppState>) -> Result<Environment, DebloadError> {
     let loaded = settings::load(&state.settings_path);
+    let platform = loaded.platform_or_detected();
     Ok(Environment {
-        can_install: loaded.platform_or_detected().installs_packages(),
+        can_install: platform.installs_packages(),
+        manages_apps: platform.manages_apps(),
         detected: settings::detect_platform(),
         settings: loaded,
     })
@@ -400,8 +530,10 @@ pub fn save_settings(
         release_cache::update(&state.release_cache_path, |cache| cache.clear());
     }
 
+    let platform = settings.platform_or_detected();
     Ok(Environment {
-        can_install: settings.platform_or_detected().installs_packages(),
+        can_install: platform.installs_packages(),
+        manages_apps: platform.manages_apps(),
         detected: settings::detect_platform(),
         settings,
     })
@@ -524,6 +656,106 @@ pub async fn install_file(
 mod tests {
     use super::*;
     use crate::runner::{CommandOutput, FakeRunner};
+
+    /// Ce que `reg query` rendrait pour MailFlow : présent, avec sa ligne de
+    /// désinstallation silencieuse.
+    fn mailflow_registry() -> String {
+        [
+            "HKEY_CURRENT_USER\SOFTWARE\Uninstall\MailFlow",
+            "    DisplayName    REG_SZ    MailFlow",
+            "    DisplayVersion    REG_SZ    0.1.8",
+            "    InstallDate    REG_SZ    20260903",
+            "    QuietUninstallString    REG_SZ    \"C:\Apps\Uninstall.exe\" /S",
+            "",
+        ]
+        .join("
+")
+    }
+
+    /// Un faux exécuteur pour qui la base de registre ne contient que MailFlow.
+    fn windows_runner() -> FakeRunner {
+        let fake = FakeRunner::new();
+        fake.on(&["reg", "HKCU"], CommandOutput::ok(&mailflow_registry()));
+        fake.on(&["reg"], CommandOutput::fail(1, "clé introuvable"));
+        fake
+    }
+
+    #[test]
+    fn windows_lists_the_catalogue_applications_it_finds() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = windows_runner();
+
+        // Sans fichiers, le catalogue livré fait foi : MailFlow en fait partie.
+        let apps = list_windows(&fake, &dir.path().join("absent"), &dir.path().join("aussi"));
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "MailFlow");
+        assert_eq!(apps[0].version, "0.1.8");
+        // La date compacte de Windows devient lisible par l'interface.
+        assert_eq!(apps[0].installed_at, "2026-09-03");
+        assert!(apps[0].removable);
+        // Le catalogue prête sa description : le registre n'en a pas.
+        assert!(apps[0].summary.contains("Gmail"));
+    }
+
+    #[test]
+    fn windows_ignores_whatever_is_not_in_the_catalogue() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeRunner::new();
+        fake.on(
+            &["reg", "HKCU"],
+            CommandOutput::ok(
+                "HKEY_CURRENT_USER\SOFTWARE\Uninstall\Jeu
+                     DisplayName    REG_SZ    Un jeu quelconque
+                     UninstallString    REG_SZ    C:\Jeu\unins.exe
+",
+            ),
+        );
+        fake.on(&["reg"], CommandOutput::fail(1, "clé introuvable"));
+
+        let apps = list_windows(&fake, &dir.path().join("absent"), &dir.path().join("aussi"));
+        assert!(apps.is_empty(), "Debload ne montre que son catalogue");
+    }
+
+    #[test]
+    fn windows_removes_an_application_by_its_own_uninstaller() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = windows_runner();
+        fake.on(&["Uninstall.exe"], CommandOutput::ok(""));
+
+        let result = remove_windows_app(
+            &fake,
+            &dir.path().join("absent"),
+            &dir.path().join("aussi"),
+            "MailFlow",
+            &|_| {},
+        )
+        .unwrap();
+
+        assert_eq!(result.package, "MailFlow");
+        assert_eq!(result.version, "0.1.8");
+
+        let call = fake.calls().into_iter().last().unwrap();
+        assert_eq!(call[0], "C:\Apps\Uninstall.exe");
+        assert_eq!(call[1], "/S");
+    }
+
+    #[test]
+    fn windows_refuses_to_remove_what_it_did_not_offer() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = windows_runner();
+
+        let err = remove_windows_app(
+            &fake,
+            &dir.path().join("absent"),
+            &dir.path().join("aussi"),
+            "Un jeu quelconque",
+            &|_| {},
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, DebloadError::NotManaged(_)));
+    }
 
     fn deb_fields() -> &'static str {
         "Package: code\nVersion: 1.104.2\nArchitecture: amd64\n\

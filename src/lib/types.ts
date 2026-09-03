@@ -103,6 +103,11 @@ export interface Environment {
   settings: Settings;
   /** Plateforme devinée, proposée par défaut à l'accueil. */
   detected: Platform;
-  /** Vrai si Debload peut installer ici, c'est-à-dire sur Debian. */
+  /** Vrai si Debload peut installer un .deb déposé, c'est-à-dire sur Debian. */
   canInstall: boolean;
+  /**
+   * Vrai si Debload sait dire ce qui est installé ici et le retirer : dpkg sur
+   * Debian, la base de registre sous Windows.
+   */
+  managesApps: boolean;
 }

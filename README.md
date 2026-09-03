@@ -41,11 +41,16 @@ l'installeur que ce fichier porte en lui :
 - **Linux sans dpkg** — une AppImage est posée dans `~/.local/bin` et rendue
   exécutable ; un `.rpm` passe par dnf, zypper ou rpm, selon ce qui est là.
 
-Ce que l'installeur du système pose, Debload ne le gère pas : pas d'onglet « Mes
-paquets », pas de désinstallation. Il relit l'état dans le système lui-même — la base
-de registre sous Windows — pour dire si une application est là et en quelle version.
-Une archive qu'il ne sait pas déplier reste dans les téléchargements, et la ligne dit
-où elle est.
+Sous Windows, l'onglet « Mes applications » remplace « Mes paquets » : il n'y a pas
+d'historique à tenir — Debload n'a rien posé lui-même — alors tout se relit dans la
+base de registre. Il n'y montre que les applications de son catalogue, et les
+désinstalle par la ligne que leur installeur y a laissée : la silencieuse quand le
+fabricant en fournit une, sinon celle qu'on reconnaît à sa signature. Pour tout le
+reste, le panneau de configuration de Windows est là et fait mieux.
+
+Sur macOS et sur les distributions sans dpkg, personne ne tient cette liste : Debload
+installe, mais ne suit ni ne désinstalle. Une archive qu'il ne sait pas déplier reste
+dans les téléchargements, et la ligne dit où elle est.
 
 ## Mot de passe
 
@@ -81,8 +86,8 @@ polkit, aucune entrée sudoers.
 ```bash
 npm install
 npm run tauri dev            # lancer
-npm test                     # tests frontend (115)
-cd src-tauri && cargo test   # tests backend (186)
+npm test                     # tests frontend (118)
+cd src-tauri && cargo test   # tests backend (201)
 npm run tauri build          # produire le .deb
 ```
 

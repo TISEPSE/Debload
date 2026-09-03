@@ -27,7 +27,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
   const [addError, setAddError] = useState<string | null>(null);
 
   // La file est tenue au-dessus des onglets : elle survit à une visite dans
-  // « Mes paquets » ou « Paramètres ».
+  // l'inventaire ou « Paramètres ».
   const { jobs, enqueue, cancel, clearSettled } = useQueue();
 
   // La liste des slugs pilote le rafraîchissement ; elle ne doit changer

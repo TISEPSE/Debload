@@ -59,9 +59,30 @@ pub trait CommandRunner: Send + Sync {
 
 pub struct RealRunner;
 
+/// Prépare un processus sans lui ouvrir de console.
+///
+/// Sous Windows, une application graphique qui lance un programme en ligne de
+/// commande lui fait ouvrir sa propre fenêtre noire, le temps qu'il tourne.
+/// Debload interroge la base de registre plusieurs fois par écran : sans
+/// `CREATE_NO_WINDOW`, ce sont autant de consoles qui clignotent au visage de
+/// l'utilisateur. Le drapeau n'a d'effet que sur les programmes en console —
+/// un assistant d'installation, lui, garde sa fenêtre.
+fn command(program: &str) -> Command {
+    let mut command = Command::new(program);
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    command
+}
+
 impl CommandRunner for RealRunner {
     fn run(&self, program: &str, args: &[&str]) -> Result<CommandOutput, DebloadError> {
-        let out = Command::new(program)
+        let out = command(program)
             .args(args)
             .output()
             .map_err(|e| DebloadError::Io(e.to_string()))?;
@@ -78,7 +99,7 @@ impl CommandRunner for RealRunner {
         args: &[&str],
         on_line: &dyn Fn(&str, &str),
     ) -> Result<CommandOutput, DebloadError> {
-        let mut child = Command::new(program)
+        let mut child = command(program)
             .args(args)
             // Aucune entrée. Une commande qui poserait une question lit une
             // fin de fichier et prend sa valeur par défaut, au lieu d'attendre
@@ -134,7 +155,7 @@ impl CommandRunner for RealRunner {
     }
 
     fn spawn_detached(&self, program: &str, args: &[&str]) -> Result<(), DebloadError> {
-        let mut command = Command::new(program);
+        let mut command = command(program);
         command
             .args(args)
             .stdin(Stdio::null())

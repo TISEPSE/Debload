@@ -121,19 +121,16 @@ fn brings_an_update(
 }
 
 /// Construit la liste, sans toucher au réseau.
+///
+/// `apps` est la photographie du registre prise par l'appelant : une seule
+/// pour tout le catalogue, et une seule par commande.
 pub fn rows(
     runner: &dyn CommandRunner,
     catalog: &Catalog,
     user: &UserRepos,
     platform: Platform,
+    apps: &[win_apps::InstalledApp],
 ) -> Vec<RepoRow> {
-    // Une seule lecture de la base de registre pour tout le catalogue : elle
-    // coûte trop cher pour la refaire à chacune des vingt lignes.
-    let apps = match platform {
-        Platform::Windows => win_apps::list(runner),
-        _ => Vec::new(),
-    };
-
     repos::effective(catalog, user)
         .into_iter()
         .map(|entry| {
@@ -146,7 +143,7 @@ pub fn rows(
                 platform,
                 package.as_deref(),
                 &[label.as_str(), entry.repo.as_str()],
-                &apps,
+                apps,
             );
 
             RepoRow {
@@ -169,6 +166,7 @@ fn describe(
     runner: &dyn CommandRunner,
     user: &UserRepos,
     settings: &Settings,
+    apps: &[win_apps::InstalledApp],
     slug: &str,
     release: &Release,
     checked_at: u64,
@@ -183,12 +181,8 @@ fn describe(
     // normalisation rapproche « HeroicGamesLauncher » de « Heroic Games
     // Launcher », c'est-à-dire du libellé qu'aurait porté la ligne.
     let repo_name = slug.rsplit('/').next().unwrap_or(slug);
-    let apps = match platform {
-        Platform::Windows => win_apps::cached_list(runner),
-        _ => Vec::new(),
-    };
     let package = user.package_for(slug);
-    let installed = installed_version(runner, platform, package, &[repo_name], &apps);
+    let installed = installed_version(runner, platform, package, &[repo_name], apps);
 
     let update_available = match installed.as_deref() {
         Some(current) => brings_an_update(runner, platform, &release.version, current),
@@ -220,6 +214,7 @@ pub fn refresh(
     runner: &dyn CommandRunner,
     user: &UserRepos,
     settings: &Settings,
+    apps: &[win_apps::InstalledApp],
     cache_path: &Path,
     slug: &str,
     force: bool,
@@ -234,6 +229,7 @@ pub fn refresh(
                 runner,
                 user,
                 settings,
+                apps,
                 slug,
                 &entry.release,
                 entry.fetched_at,
@@ -258,7 +254,7 @@ pub fn refresh(
             let checked_at = release_cache::now();
             release_cache::update(cache_path, |cache| cache.put(slug, release.clone()));
             Ok(describe(
-                runner, user, settings, slug, &release, checked_at, false,
+                runner, user, settings, apps, slug, &release, checked_at, false,
             ))
         }
         // Hors ligne : la dernière version connue vaut mieux qu'un message
@@ -270,6 +266,7 @@ pub fn refresh(
                     runner,
                     user,
                     settings,
+                    apps,
                     slug,
                     &entry.release,
                     entry.fetched_at,
@@ -342,7 +339,9 @@ pub fn prepare(
 ) -> Result<DebInfo, DebloadError> {
     // La release vient forcément du réseau ici : installer d'après un cache
     // vieux d'une heure reviendrait à poser une version périmée.
-    let release = refresh(runner, user, settings, cache_path, slug, true)?;
+    // Aucune photographie du registre ici : seul le fichier à prendre compte,
+    // et il ne dépend pas de ce qui est déjà installé.
+    let release = refresh(runner, user, settings, &[], cache_path, slug, true)?;
     let asset = choose_asset(&release.assets, asset_name)?;
 
     let destination = cache_dir.join(cache_file_name(slug, &asset.name));
@@ -432,7 +431,7 @@ mod tests {
     #[test]
     fn a_repo_never_installed_shows_no_version() {
         let fake = FakeRunner::new();
-        let rows = rows(&fake, &catalog(), &UserRepos::default(), Platform::Debian);
+        let rows = rows(&fake, &catalog(), &UserRepos::default(), Platform::Debian, &[]);
 
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].slug, "TISEPSE/MailFlow");
@@ -455,7 +454,7 @@ mod tests {
             CommandOutput::ok("installed|0.1.8|amd64"),
         );
 
-        let rows = rows(&fake, &catalog(), &user, Platform::Debian);
+        let rows = rows(&fake, &catalog(), &user, Platform::Debian, &[]);
         assert_eq!(rows[0].package.as_deref(), Some("mail-flow"));
         assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
     }
@@ -469,7 +468,7 @@ mod tests {
         fake.on(&["dpkg-query"], CommandOutput::fail(1, "inconnu"));
 
         assert_eq!(
-            rows(&fake, &catalog(), &user, Platform::Debian)[0].installed,
+            rows(&fake, &catalog(), &user, Platform::Debian, &[])[0].installed,
             None
         );
     }
@@ -479,35 +478,32 @@ mod tests {
         // Rien dans l'historique : sur Windows, c'est l'utilisateur qui a
         // lancé l'installeur, Debload n'a jamais rien posé lui-même.
         let fake = FakeRunner::new();
-        fake.on(
-            &["reg", "HKCU"],
-            CommandOutput::ok(
-                "HKEY_CURRENT_USER\\SOFTWARE\\Uninstall\\MailFlow\n    \
-                 DisplayName    REG_SZ    MailFlow\n    \
-                 DisplayVersion    REG_SZ    0.1.8\n",
-            ),
-        );
-        fake.on(&["reg"], CommandOutput::fail(1, "clé introuvable"));
+        let apps = vec![win_apps::InstalledApp {
+            name: "MailFlow".to_string(),
+            version: Some("0.1.8".to_string()),
+            ..Default::default()
+        }];
 
-        let rows = rows(&fake, &catalog(), &UserRepos::default(), Platform::Windows);
+        let user = UserRepos::default();
+        let rows = rows(&fake, &catalog(), &user, Platform::Windows, &apps);
+
         assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
-        // Aucun appel à dpkg : il n'existe pas ici.
-        assert!(fake.calls().iter().all(|c| c[0] == "reg"));
+        // Ni dpkg ni base de registre : la photographie est déjà prise, et la
+        // relire pour chacune des vingt lignes coûtait deux secondes par écran.
+        assert!(fake.calls().is_empty());
     }
 
     #[test]
-    fn windows_reads_the_registry_once_for_the_whole_catalogue() {
+    fn windows_says_nothing_of_an_application_the_registry_ignores() {
         let fake = FakeRunner::new();
-        fake.on(&["reg"], CommandOutput::ok(""));
-
         let mut user = UserRepos::default();
         add(&mut user, "https://github.com/microsoft/vscode").unwrap();
-        let rows = rows(&fake, &catalog(), &user, Platform::Windows);
+
+        let rows = rows(&fake, &catalog(), &user, Platform::Windows, &[]);
 
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.installed.is_none()));
-        // Trois racines, et pas trois par ligne.
-        assert_eq!(fake.calls().len(), 3);
+        assert!(fake.calls().is_empty());
     }
 
     #[test]
@@ -533,7 +529,7 @@ mod tests {
         add(&mut user, "https://github.com/microsoft/vscode").unwrap();
 
         let fake = FakeRunner::new();
-        let rows = rows(&fake, &catalog(), &user, Platform::Debian);
+        let rows = rows(&fake, &catalog(), &user, Platform::Debian, &[]);
 
         let added = rows.iter().find(|r| r.slug == "microsoft/vscode").unwrap();
         assert!(!added.bundled);

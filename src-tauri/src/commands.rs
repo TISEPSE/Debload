@@ -183,7 +183,23 @@ pub fn install_natively(
         });
     };
 
-    installer::install(runner, Path::new(path), platform, places, &on_line)
+    installer::install(runner, Path::new(path), platform, places, &on_line)?;
+
+    // Ce qui vient d'être posé doit apparaître au prochain écran.
+    win_apps::forget();
+    Ok(())
+}
+
+/// La photographie du registre dont une commande a besoin.
+///
+/// Elle se prend une fois, au bord : tout ce qui travaille en dessous la
+/// reçoit, plutôt que de relire la base de registre pour son propre compte.
+/// Ailleurs que sous Windows, il n'y a rien à photographier.
+fn registry_snapshot(runner: &dyn CommandRunner, platform: Platform) -> Vec<InstalledApp> {
+    match platform {
+        Platform::Windows => win_apps::cached_list(runner),
+        _ => Vec::new(),
+    }
 }
 
 /// Les applications du catalogue que Windows déclare installées.
@@ -192,20 +208,19 @@ pub fn install_natively(
 /// retirer, que ce qu'il aurait su installer lui-même. Pour tout le reste, le
 /// panneau de configuration de Windows est là et fait mieux.
 fn catalogued_apps(
-    runner: &dyn CommandRunner,
     catalog_path: &Path,
     repos_path: &Path,
+    apps: &[InstalledApp],
 ) -> Vec<(CatalogEntry, InstalledApp)> {
     let catalog = repos::load_catalog(catalog_path);
     let user = repos::load_user(repos_path);
-    let apps = win_apps::list(runner);
 
     repos::effective(&catalog, &user)
         .into_iter()
         .filter_map(|entry| {
             let label = entry.label.clone().unwrap_or_else(|| entry.repo.clone());
             let names = [label.as_str(), entry.repo.as_str()];
-            let found = win_apps::find(&apps, &names)?.clone();
+            let found = win_apps::find(apps, &names)?.clone();
             Some((entry, found))
         })
         .collect()
@@ -230,11 +245,11 @@ fn readable_date(compact: &str) -> String {
 /// lui-même, c'est l'installeur du système qui a travaillé. Tout se relit donc
 /// dans la base de registre, à chaque fois.
 pub fn list_windows(
-    runner: &dyn CommandRunner,
     catalog_path: &Path,
     repos_path: &Path,
+    apps: &[InstalledApp],
 ) -> Vec<ManagedPackage> {
-    catalogued_apps(runner, catalog_path, repos_path)
+    catalogued_apps(catalog_path, repos_path, apps)
         .into_iter()
         .map(|(entry, app)| ManagedPackage {
             name: app.name,
@@ -261,10 +276,11 @@ pub fn remove_windows_app(
     runner: &dyn CommandRunner,
     catalog_path: &Path,
     repos_path: &Path,
+    apps: &[InstalledApp],
     name: &str,
     sink: &dyn Fn(OutputEvent),
 ) -> Result<OperationResult, DebloadError> {
-    let (_, app) = catalogued_apps(runner, catalog_path, repos_path)
+    let (_, app) = catalogued_apps(catalog_path, repos_path, apps)
         .into_iter()
         .find(|(_, app)| app.name == name)
         // Hors catalogue, Debload ne se mêle de rien : c'est la même règle que
@@ -282,6 +298,9 @@ pub fn remove_windows_app(
         });
     };
     installer::uninstall(runner, raw, quiet, &on_line)?;
+
+    // Le registre vient de changer : l'écran suivant doit le relire.
+    win_apps::forget();
 
     Ok(OperationResult {
         package: app.name.clone(),
@@ -437,7 +456,8 @@ pub fn list_managed(state: State<'_, AppState>) -> Result<Vec<ManagedPackage>, D
     let platform = settings::load(&state.settings_path).platform_or_detected();
 
     if platform == Platform::Windows {
-        return Ok(list_windows(runner, &state.catalog_path, &state.repos_path));
+        let apps = win_apps::cached_list(runner);
+        return Ok(list_windows(&state.catalog_path, &state.repos_path, &apps));
     }
 
     list(runner, &state.history_path)
@@ -471,7 +491,15 @@ pub async fn uninstall(
         if platform == Platform::Windows {
             // `purge` n'a pas d'équivalent : c'est le désinstalleur de
             // l'application qui décide de ce qu'il laisse derrière lui.
-            return remove_windows_app(runner.as_ref(), &catalog_path, &repos_path, &name, &emit);
+            let apps = registry_snapshot(runner.as_ref(), platform);
+            return remove_windows_app(
+                runner.as_ref(),
+                &catalog_path,
+                &repos_path,
+                &apps,
+                &name,
+                &emit,
+            );
         }
 
         remove_package(
@@ -675,21 +703,21 @@ mod tests {
         .join("\n")
     }
 
-    /// Un faux exécuteur pour qui la base de registre ne contient que MailFlow.
-    fn windows_runner() -> FakeRunner {
-        let fake = FakeRunner::new();
-        fake.on(&["reg", "HKCU"], CommandOutput::ok(&mailflow_registry()));
-        fake.on(&["reg"], CommandOutput::fail(1, "clé introuvable"));
-        fake
+    /// La photographie du registre d'une machine où MailFlow est installé.
+    fn mailflow_snapshot() -> Vec<InstalledApp> {
+        win_apps::parse_reg_query(&mailflow_registry())
     }
 
     #[test]
     fn windows_lists_the_catalogue_applications_it_finds() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = windows_runner();
 
         // Sans fichiers, le catalogue livré fait foi : MailFlow en fait partie.
-        let apps = list_windows(&fake, &dir.path().join("absent"), &dir.path().join("aussi"));
+        let apps = list_windows(
+            &dir.path().join("absent"),
+            &dir.path().join("aussi"),
+            &mailflow_snapshot(),
+        );
 
         assert_eq!(apps.len(), 1);
         assert_eq!(apps[0].name, "MailFlow");
@@ -704,31 +732,32 @@ mod tests {
     #[test]
     fn windows_ignores_whatever_is_not_in_the_catalogue() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = FakeRunner::new();
-        fake.on(
-            &["reg", "HKCU"],
-            CommandOutput::ok(
-                "HKEY_CURRENT_USER\\SOFTWARE\\Uninstall\\Jeu\n    \
-                 DisplayName    REG_SZ    Un jeu quelconque\n    \
-                 UninstallString    REG_SZ    C:\\Jeu\\unins.exe\n",
-            ),
-        );
-        fake.on(&["reg"], CommandOutput::fail(1, "clé introuvable"));
+        let installed = vec![InstalledApp {
+            name: "Un jeu quelconque".to_string(),
+            uninstall: Some(r"C:\Jeu\unins.exe".to_string()),
+            ..Default::default()
+        }];
 
-        let apps = list_windows(&fake, &dir.path().join("absent"), &dir.path().join("aussi"));
+        let apps = list_windows(
+            &dir.path().join("absent"),
+            &dir.path().join("aussi"),
+            &installed,
+        );
+
         assert!(apps.is_empty(), "Debload ne montre que son catalogue");
     }
 
     #[test]
     fn windows_removes_an_application_by_its_own_uninstaller() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = windows_runner();
+        let fake = FakeRunner::new();
         fake.on(&["Uninstall.exe"], CommandOutput::ok(""));
 
         let result = remove_windows_app(
             &fake,
             &dir.path().join("absent"),
             &dir.path().join("aussi"),
+            &mailflow_snapshot(),
             "MailFlow",
             &|_| {},
         )
@@ -745,12 +774,13 @@ mod tests {
     #[test]
     fn windows_refuses_to_remove_what_it_did_not_offer() {
         let dir = tempfile::tempdir().unwrap();
-        let fake = windows_runner();
+        let fake = FakeRunner::new();
 
         let err = remove_windows_app(
             &fake,
             &dir.path().join("absent"),
             &dir.path().join("aussi"),
+            &mailflow_snapshot(),
             "Un jeu quelconque",
             &|_| {},
         )
@@ -1283,7 +1313,8 @@ pub fn list_repos(state: State<'_, AppState>) -> Result<Vec<RepoRow>, DebloadErr
     let catalog = repos::load_catalog(&state.catalog_path);
     let user = repos::load_user(&state.repos_path);
     let platform = settings::load(&state.settings_path).platform_or_detected();
-    let rows = repo_ops::rows(state.runner.as_ref(), &catalog, &user, platform);
+    let apps = registry_snapshot(state.runner.as_ref(), platform);
+    let rows = repo_ops::rows(state.runner.as_ref(), &catalog, &user, platform, &apps);
 
     // Un dépôt retiré n'a plus de raison d'occuper le cache.
     let slugs: Vec<String> = rows.iter().map(|r| r.slug.clone()).collect();
@@ -1314,7 +1345,18 @@ pub async fn refresh_repo(
     tauri::async_runtime::spawn_blocking(move || {
         let user = repos::load_user(&repos_path);
         let settings = settings::load(&settings_path);
-        repo_ops::refresh(runner.as_ref(), &user, &settings, &cache_path, &slug, force)
+        let platform = settings.platform_or_detected();
+        let apps = registry_snapshot(runner.as_ref(), platform);
+
+        repo_ops::refresh(
+            runner.as_ref(),
+            &user,
+            &settings,
+            &apps,
+            &cache_path,
+            &slug,
+            force,
+        )
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?

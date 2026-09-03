@@ -78,15 +78,25 @@ pub fn list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
 /// Une lecture de la base de registre, avec l'instant où elle a été faite.
 type Snapshot = (Instant, Vec<InstalledApp>);
 
-/// Même chose, mais sans relancer `reg` pour chacun des vingt dépôts du
-/// catalogue. La liste vieillit vite : une application installée pendant que
-/// Debload tourne doit finir par apparaître.
-pub fn cached_list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
-    const MAX_AGE: Duration = Duration::from_secs(20);
+fn cache() -> &'static Mutex<Option<Snapshot>> {
     static CACHE: OnceLock<Mutex<Option<Snapshot>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
+}
 
-    let cache = CACHE.get_or_init(|| Mutex::new(None));
-    let mut guard = cache.lock().unwrap_or_else(|e| e.into_inner());
+/// La liste, sans relire la base de registre à chaque fois qu'on la demande.
+///
+/// Cette lecture coûte cher : `reg query /s` déverse tout l'arbre de
+/// désinstallation, soit près de deux secondes sur une machine ordinaire. La
+/// refaire à chaque écran rendait l'application poussive pour rien — rien ne
+/// s'installe entre deux clics d'onglet.
+///
+/// Ce que Debload pose ou retire lui-même vide le cache aussitôt, par
+/// `forget` ; le délai ne sert qu'à rattraper ce qui a été installé ailleurs,
+/// pendant qu'il tournait.
+pub fn cached_list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
+    const MAX_AGE: Duration = Duration::from_secs(90);
+
+    let mut guard = cache().lock().unwrap_or_else(|e| e.into_inner());
 
     if let Some((at, apps)) = guard.as_ref() {
         if at.elapsed() < MAX_AGE {
@@ -97,6 +107,15 @@ pub fn cached_list(runner: &dyn CommandRunner) -> Vec<InstalledApp> {
     let apps = list(runner);
     *guard = Some((Instant::now(), apps.clone()));
     apps
+}
+
+/// Oublie ce qu'on croyait savoir du registre.
+///
+/// À appeler après avoir installé ou désinstallé : l'écran suivant doit voir
+/// le système tel qu'il est devenu, pas tel qu'il était il y a une minute.
+pub fn forget() {
+    let mut guard = cache().lock().unwrap_or_else(|e| e.into_inner());
+    *guard = None;
 }
 
 /// Découpe la sortie de `reg query … /s`.

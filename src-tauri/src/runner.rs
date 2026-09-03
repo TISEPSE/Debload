@@ -68,6 +68,9 @@ pub struct RealRunner;
 /// l'utilisateur. Le drapeau n'a d'effet que sur les programmes en console —
 /// un assistant d'installation, lui, garde sa fenêtre.
 fn command(program: &str) -> Command {
+    // Hors Windows, rien ne vient modifier la commande : le `mut` n'y sert
+    // qu'à laisser la place au bloc qui suit.
+    #[allow(unused_mut)]
     let mut command = Command::new(program);
 
     #[cfg(windows)]

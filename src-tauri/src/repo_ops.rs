@@ -338,9 +338,9 @@ pub fn prepare(
     on_progress: &dyn Fn(f32, u64, u64),
 ) -> Result<DebInfo, DebloadError> {
     // La release vient forcément du réseau ici : installer d'après un cache
-    // vieux d'une heure reviendrait à poser une version périmée.
-    // Aucune photographie du registre ici : seul le fichier à prendre compte,
-    // et il ne dépend pas de ce qui est déjà installé.
+    // vieux d'une heure reviendrait à poser une version périmée. Et nul besoin
+    // de photographier le registre : seul compte le fichier à prendre, qui ne
+    // dépend pas de ce qui est déjà installé.
     let release = refresh(runner, user, settings, &[], cache_path, slug, true)?;
     let asset = choose_asset(&release.assets, asset_name)?;
 
@@ -377,7 +377,9 @@ pub fn fetch_asset(
     asset_name: Option<&str>,
     on_progress: &dyn Fn(f32, u64, u64),
 ) -> Result<PathBuf, DebloadError> {
-    let release = refresh(runner, user, settings, cache_path, slug, true)?;
+    // Aucune photographie du registre ici : seul compte le fichier à prendre,
+    // et il ne dépend pas de ce qui est déjà installé.
+    let release = refresh(runner, user, settings, &[], cache_path, slug, true)?;
     let asset = choose_asset(&release.assets, asset_name)?;
 
     // Le nom vient du réseau : on le neutralise avant d'en faire un chemin,

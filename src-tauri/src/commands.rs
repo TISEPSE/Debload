@@ -243,7 +243,11 @@ pub fn list_windows(
             // l'interface n'en montre pas, et Debload n'en invente pas.
             architecture: String::new(),
             source_file: String::new(),
-            installed_at: app.installed_on.as_deref().map(readable_date).unwrap_or_default(),
+            installed_at: app
+                .installed_on
+                .as_deref()
+                .map(readable_date)
+                .unwrap_or_default(),
             summary: entry.description.unwrap_or_default(),
             // Une application sans ligne de désinstallation existe : elle ne
             // se retire simplement pas d'ici.

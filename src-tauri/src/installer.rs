@@ -878,7 +878,10 @@ mod tests {
     #[test]
     fn an_uninstaller_that_fails_says_why() {
         let fake = FakeRunner::new();
-        fake.on(&["unins000.exe"], CommandOutput::fail(1, "fichier verrouillé"));
+        fake.on(
+            &["unins000.exe"],
+            CommandOutput::fail(1, "fichier verrouillé"),
+        );
 
         let raw = "C:\\Truc\\unins000.exe";
         let err = uninstall(&fake, raw, true, &|_, _| {}).unwrap_err();

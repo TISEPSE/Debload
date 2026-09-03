@@ -8,7 +8,7 @@ import {
   working,
   type Job,
 } from "./queue";
-import type { DebInfo, RepoRow } from "./types";
+import type { RepoRow } from "./types";
 
 function row(slug: string): RepoRow {
   return {
@@ -26,17 +26,8 @@ function row(slug: string): RepoRow {
 const mailflow = row("TISEPSE/MailFlow");
 const nexus = row("TISEPSE/Nexus");
 
-const info: DebInfo = {
-  package: "mail-flow",
-  version: "0.1.9",
-  architecture: "amd64",
-  installedSizeKb: 1024,
-  summary: "Tri Gmail",
-  description: "",
-  maintainer: null,
-  sourcePath: "/cache/MailFlow_0.1.9_amd64.deb",
-  alreadyInstalled: null,
-};
+/** Le fichier arrivé : tout ce que la file en retient, c'est où il est. */
+const file = "/cache/MailFlow_0.1.9_amd64.deb";
 
 /** Enchaîne des actions depuis la file vide, pour poser un décor lisible. */
 function play(...actions: Parameters<typeof queueReducer>[1][]): Job[] {
@@ -106,7 +97,7 @@ describe("queueReducer", () => {
     const queue = play(
       enqueueMailflow,
       { type: "download_started", slug: mailflow.slug },
-      { type: "downloaded", slug: mailflow.slug, info },
+      { type: "downloaded", slug: mailflow.slug, path: file },
       { type: "install_started", slug: mailflow.slug },
       { type: "install_log", line: { stream: "stdout", line: "Dépaquetage…" } },
     );
@@ -120,7 +111,7 @@ describe("queueReducer", () => {
     const queue = play(
       enqueueMailflow,
       { type: "download_started", slug: mailflow.slug },
-      { type: "downloaded", slug: mailflow.slug, info },
+      { type: "downloaded", slug: mailflow.slug, path: file },
       { type: "install_started", slug: mailflow.slug },
       { type: "install_log", line: { stream: "stderr", line: "E: dépendance" } },
       { type: "failed", slug: mailflow.slug, message: "L'opération a échoué." },
@@ -137,7 +128,7 @@ describe("queueReducer", () => {
       enqueueMailflow,
       { type: "download_started", slug: mailflow.slug },
       { type: "cancel", slug: nexus.slug },
-      { type: "downloaded", slug: nexus.slug, info },
+      { type: "downloaded", slug: nexus.slug, path: file },
     );
     expect(queue).toHaveLength(1);
     expect(queue[0].row.slug).toBe(mailflow.slug);
@@ -147,7 +138,7 @@ describe("queueReducer", () => {
     const queue = play(
       enqueueMailflow,
       { type: "download_started", slug: mailflow.slug },
-      { type: "downloaded", slug: mailflow.slug, info },
+      { type: "downloaded", slug: mailflow.slug, path: file },
       { type: "install_started", slug: mailflow.slug },
       { type: "installed", slug: mailflow.slug },
       { type: "clear_settled" },
@@ -172,6 +163,19 @@ describe("queueReducer", () => {
     );
     expect(queue).toHaveLength(1);
     expect(queue[0].state.phase).toBe("failed");
+  });
+
+  it("dépose le fichier quand personne ici ne sait l'installer", () => {
+    // Le verdict tombe après la tentative d'installation, pas avant : c'est le
+    // backend qui sait ce qu'il sait faire, pas l'interface.
+    const queue = play(
+      enqueueMailflow,
+      { type: "download_started", slug: mailflow.slug },
+      { type: "downloaded", slug: mailflow.slug, path: file },
+      { type: "install_started", slug: mailflow.slug },
+      { type: "saved", slug: mailflow.slug, path: file },
+    );
+    expect(queue[0].state).toEqual({ phase: "saved", path: file });
   });
 
   it("garde un fichier déposé sous les yeux : lui seul dit où il est", () => {
@@ -207,7 +211,7 @@ describe("les deux postes de travail", () => {
       enqueueMailflow,
       enqueueNexus,
       { type: "download_started", slug: mailflow.slug },
-      { type: "downloaded", slug: mailflow.slug, info },
+      { type: "downloaded", slug: mailflow.slug, path: file },
       { type: "download_started", slug: nexus.slug },
     );
     expect(nextToInstall(queue)?.row.slug).toBe(mailflow.slug);
@@ -219,10 +223,10 @@ describe("les deux postes de travail", () => {
       enqueueMailflow,
       enqueueNexus,
       { type: "download_started", slug: mailflow.slug },
-      { type: "downloaded", slug: mailflow.slug, info },
+      { type: "downloaded", slug: mailflow.slug, path: file },
       { type: "install_started", slug: mailflow.slug },
       { type: "download_started", slug: nexus.slug },
-      { type: "downloaded", slug: nexus.slug, info },
+      { type: "downloaded", slug: nexus.slug, path: file },
     );
     expect(nextToInstall(queue)).toBeNull();
   });

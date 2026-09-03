@@ -1,8 +1,9 @@
 //! Réglages de l'application, et système sur lequel elle tourne.
 //!
 //! La plateforme n'est pas une préférence cosmétique : elle décide de ce que
-//! Debload sait faire. Sur Debian il installe ; ailleurs il se contente de
-//! récupérer le bon fichier, parce qu'il n'a ni apt ni dpkg sous la main.
+//! Debload sait faire. Sur Debian, apt installe et désinstalle ; ailleurs,
+//! Debload récupère le fichier et le confie à l'installeur du système, qui
+//! n'en dit ni le nom ni la version.
 
 use std::path::Path;
 
@@ -23,12 +24,26 @@ pub enum Platform {
 }
 
 impl Platform {
-    /// Vrai là où Debload peut réellement installer un paquet.
+    /// Vrai là où apt et dpkg répondent, donc là où Debload gère lui-même ce
+    /// qu'il a posé : liste des paquets installés, désinstallation, versions.
     ///
-    /// Partout ailleurs l'interface ne propose que le téléchargement : mieux
-    /// vaut un bouton honnête qu'un bouton qui échouera.
+    /// Ailleurs il sait installer, mais pas suivre : l'installeur du système
+    /// fait le travail sans rien lui rendre.
     pub fn installs_packages(self) -> bool {
         matches!(self, Platform::Debian)
+    }
+
+    /// Extensions que Debload sait installer lui-même sur ce système.
+    ///
+    /// Sous-ensemble de ce qu'il sait télécharger : une archive `.tar.gz` se
+    /// récupère, mais personne ne sait où la déplier.
+    pub fn installable_extensions(self) -> &'static [&'static str] {
+        match self {
+            Platform::Debian => &[".deb"],
+            Platform::LinuxOther => &[".appimage", ".rpm"],
+            Platform::Windows => &[".msi", ".exe"],
+            Platform::MacOs => &[".dmg", ".pkg"],
+        }
     }
 
     /// Extensions de fichier qui ont un sens sur ce système.
@@ -140,6 +155,32 @@ mod tests {
         assert_eq!(Platform::Debian.extensions(), &[".deb"]);
         assert!(Platform::Windows.extensions().contains(&".msi"));
         assert!(Platform::LinuxOther.extensions().contains(&".appimage"));
+    }
+
+    #[test]
+    fn everything_installable_can_also_be_downloaded() {
+        for platform in [
+            Platform::Debian,
+            Platform::LinuxOther,
+            Platform::Windows,
+            Platform::MacOs,
+        ] {
+            for ext in platform.installable_extensions() {
+                assert!(
+                    platform.extensions().contains(ext),
+                    "{ext} s'installe sans se télécharger sur {platform:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_archive_is_downloaded_but_not_installed() {
+        // Personne ne sait où déplier une tarball : elle se récupère, un point
+        // c'est tout.
+        let installable = Platform::LinuxOther.installable_extensions();
+        assert!(Platform::LinuxOther.extensions().contains(&".tar.gz"));
+        assert!(!installable.contains(&".tar.gz"));
     }
 
     #[test]

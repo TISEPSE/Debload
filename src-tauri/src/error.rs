@@ -17,6 +17,9 @@ pub enum DebloadError {
     ProtectedPackage(String),
     /// Le paquet n'installe aucune application lançable (outil en ligne de commande).
     NotLaunchable(String),
+    /// Debload ne sait pas installer ce fichier sur ce système : le
+    /// téléchargement a abouti, mais rien ici ne sait quoi en faire.
+    NotInstallable(String),
     /// Référence de dépôt GitHub incompréhensible.
     InvalidRepo(String),
     /// Le dépôt n'a aucune release publiée, ou n'existe pas.
@@ -54,6 +57,7 @@ impl std::fmt::Display for DebloadError {
             Self::NotManaged(n) => write!(f, "Debload n'a pas installé le paquet {n}"),
             Self::ProtectedPackage(n) => write!(f, "{n} est un paquet système essentiel"),
             Self::NotLaunchable(n) => write!(f, "{n} n'installe pas d'application à ouvrir"),
+            Self::NotInstallable(n) => write!(f, "Debload ne sait pas installer {n} ici"),
             Self::InvalidRepo(r) => write!(f, "Dépôt GitHub non reconnu : {r}"),
             Self::NoRelease(r) => write!(f, "{r} n'a aucune release publiée"),
             Self::NoDebAsset(r) => write!(f, "La dernière release de {r} ne contient aucun .deb"),

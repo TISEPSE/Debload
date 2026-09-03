@@ -8,6 +8,7 @@ use crate::deb::{read_deb_info, validate_deb_path, DebInfo};
 use crate::error::{classify_failure, DebloadError};
 use crate::github;
 use crate::history::{self, HistoryEntry};
+use crate::installer::{self, Places};
 use crate::launch::{self, is_launchable};
 use crate::pkg::{is_protected, query_installed, validate_package_name};
 use crate::privileged::PrivilegedApt;
@@ -35,9 +36,13 @@ pub struct AppState {
     pub settings_path: PathBuf,
     /// Dernières releases connues, pour afficher la page sans attendre.
     pub release_cache_path: PathBuf,
-    /// Dossier de téléchargement du système, quand Debload ne peut
-    /// qu'y déposer un fichier.
+    /// Dossier de téléchargement du système, où atterrit ce que Debload
+    /// confie ensuite à l'installeur du système.
     pub downloads_dir: PathBuf,
+    /// Dossier personnel, où se pose une AppImage.
+    pub home_dir: PathBuf,
+    /// Le dossier « Applications » de macOS.
+    pub applications_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -154,6 +159,30 @@ pub fn install(
         version: info.version,
         launchable,
     })
+}
+
+/// Installe un fichier déjà téléchargé, par les moyens du système.
+///
+/// C'est le pendant d'`install` là où apt n'existe pas. La différence n'est
+/// pas que technique : apt rend un nom, une version et un code de sortie,
+/// alors qu'un installeur Windows ne rend qu'un code. Il n'y a donc rien à
+/// inscrire dans l'historique — ce que le système a posé, Debload le relit
+/// dans le système.
+pub fn install_natively(
+    runner: &dyn CommandRunner,
+    path: &str,
+    platform: Platform,
+    places: &Places,
+    sink: &dyn Fn(OutputEvent),
+) -> Result<(), DebloadError> {
+    let on_line = |stream: &str, line: &str| {
+        sink(OutputEvent::Log {
+            stream: stream.to_string(),
+            line: line.to_string(),
+        });
+    };
+
+    installer::install(runner, Path::new(path), platform, places, &on_line)
 }
 
 /// Liste les paquets gérés par Debload, après réconciliation avec dpkg.
@@ -451,6 +480,41 @@ pub async fn download_from_repo(
             &on_progress,
         )
         .map(|path| path.display().to_string())
+    })
+    .await
+    .map_err(|e| DebloadError::Io(e.to_string()))?
+}
+
+/// Installe un fichier téléchargé, hors Debian.
+///
+/// Le travail part sur un thread dédié : un assistant peut réfléchir plusieurs
+/// minutes, et la fenêtre doit rester vivante pendant ce temps.
+#[tauri::command]
+pub async fn install_file(
+    path: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), DebloadError> {
+    let runner = state.runner.clone();
+    let settings_path = state.settings_path.clone();
+    let places = Places {
+        home: state.home_dir.clone(),
+        applications: state.applications_dir.clone(),
+    };
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let platform = settings::load(&settings_path).platform_or_detected();
+
+        let emit = |event: OutputEvent| match event {
+            OutputEvent::Progress(p) => {
+                let _ = app.emit("install-progress", p);
+            }
+            OutputEvent::Log { stream, line } => {
+                let _ = app.emit("install-log", LogLine { stream, line });
+            }
+        };
+
+        install_natively(runner.as_ref(), &path, platform, &places, &emit)
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?

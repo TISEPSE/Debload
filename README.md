@@ -26,6 +26,27 @@ seul endroit qui te dit ce que contient un `.deb` venu d'ailleurs.
 Debload ne désinstalle que ce qu'il a installé, et refuse de toucher aux paquets que
 dpkg déclare essentiels.
 
+## Ailleurs que sur Debian
+
+Le catalogue fonctionne partout ; c'est l'installation qui change de main. Là où apt
+n'existe pas, Debload télécharge le fichier qui convient au système, puis le confie à
+l'installeur que ce fichier porte en lui :
+
+- **Windows** — le `.exe` est lu pour reconnaître son assistant. NSIS et Inno Setup
+  reçoivent leur drapeau silencieux, un `.msi` passe par `msiexec`. Un exécutable dont
+  la signature ne dit rien ouvre son assistant plutôt que de se voir imposer un drapeau
+  deviné. Si Windows exige l'élévation, l'invite UAC s'ouvre.
+- **macOS** — un `.dmg` est monté, l'application copiée dans « Applications », l'image
+  éjectée. Un `.pkg` ouvre l'assistant du système.
+- **Linux sans dpkg** — une AppImage est posée dans `~/.local/bin` et rendue
+  exécutable ; un `.rpm` passe par dnf, zypper ou rpm, selon ce qui est là.
+
+Ce que l'installeur du système pose, Debload ne le gère pas : pas d'onglet « Mes
+paquets », pas de désinstallation. Il relit l'état dans le système lui-même — la base
+de registre sous Windows — pour dire si une application est là et en quelle version.
+Une archive qu'il ne sait pas déplier reste dans les téléchargements, et la ligne dit
+où elle est.
+
 ## Mot de passe
 
 Ubuntu le demande **une fois par lancement**, au premier besoin. Debload se relance
@@ -60,8 +81,8 @@ polkit, aucune entrée sudoers.
 ```bash
 npm install
 npm run tauri dev            # lancer
-npm test                     # tests frontend (51)
-cd src-tauri && cargo test   # tests backend (123)
+npm test                     # tests frontend (115)
+cd src-tauri && cargo test   # tests backend (186)
 npm run tauri build          # produire le .deb
 ```
 

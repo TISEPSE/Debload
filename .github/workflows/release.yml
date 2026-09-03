@@ -88,8 +88,10 @@ jobs:
 
             **Windows** — exécutez le `.msi` ou le `.exe`.
 
-            > Debload installe et désinstalle des paquets Debian. Sur Windows,
-            > l'application se lance mais ne peut encore rien installer.
+            > Debload installe et désinstalle des paquets Debian. Ailleurs, il
+            > télécharge le fichier qui convient et le confie à l'installeur du
+            > système : assistant silencieux sous Windows quand il le reconnaît,
+            > image disque montée sous macOS, AppImage posée sous Linux.
           releaseDraft: true
           prerelease: false
           # Ne publie rien de lui-même : la release reste en brouillon

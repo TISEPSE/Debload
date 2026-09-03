@@ -8,7 +8,14 @@ import {
 } from "react";
 import { listen } from "@tauri-apps/api/event";
 
-import { downloadFromRepo, formatError, installDeb, prepareFromRepo } from "./api";
+import {
+  downloadFromRepo,
+  errorCode,
+  formatError,
+  installDeb,
+  installFile,
+  prepareFromRepo,
+} from "./api";
 import {
   initialQueue,
   nextToDownload,
@@ -34,8 +41,9 @@ const QueueContext = createContext<Queue | null>(null);
  * La file d'attente du catalogue, tenue au-dessus des onglets.
  *
  * Deux postes de travail se relaient dessus : l'un télécharge, l'autre
- * installe, chacun une ligne à la fois. Pendant qu'apt travaille — il ne sait
- * de toute façon traiter qu'un paquet à la fois —, le suivant arrive déjà.
+ * installe, chacun une ligne à la fois. Pendant que l'installation travaille —
+ * apt ne sait de toute façon traiter qu'un paquet à la fois, et deux assistants
+ * Windows lancés ensemble se marcheraient dessus —, le suivant arrive déjà.
  *
  * Le backend poursuit son travail quoi qu'il arrive ; c'est l'interface qui
  * l'oubliait. En gardant la file ici, au-dessus de la navigation, un
@@ -78,16 +86,14 @@ export function useQueueRunner(canInstall: boolean, onInstalled: () => void): Qu
 
     void (async () => {
       try {
-        // Sur Debian, le fichier va au cache et sera installé juste après.
-        // Ailleurs, Debload le dépose et s'arrête là : sans dpkg, il n'a rien
-        // de plus à proposer.
-        if (canInstall) {
-          const info = await prepareFromRepo(slug, assetName);
-          dispatch({ type: "downloaded", slug, info });
-        } else {
-          const path = await downloadFromRepo(slug, assetName);
-          dispatch({ type: "saved", slug, path });
-        }
+        // Sur Debian, le fichier va au cache et apt le prendra là. Ailleurs il
+        // atterrit dans les téléchargements, d'où l'installeur du système le
+        // reprendra — et où il restera si personne ne sait quoi en faire.
+        const path = canInstall
+          ? (await prepareFromRepo(slug, assetName)).sourcePath
+          : await downloadFromRepo(slug, assetName);
+
+        dispatch({ type: "downloaded", slug, path });
       } catch (error) {
         dispatch({ type: "failed", slug, message: formatError(error) });
       }
@@ -100,19 +106,32 @@ export function useQueueRunner(canInstall: boolean, onInstalled: () => void): Qu
     if (!job || job.state.phase !== "ready") return;
 
     const { slug } = job.row;
-    const { sourcePath } = job.state.info;
+    const { path } = job.state;
     dispatch({ type: "install_started", slug });
 
     void (async () => {
       try {
-        await installDeb(sourcePath);
+        // Sur Debian, apt ; ailleurs, l'installeur que le fichier porte en
+        // lui. Les deux ne rendent pas la même chose, mais la file n'a besoin
+        // que de savoir si c'est passé.
+        if (canInstall) {
+          await installDeb(path);
+        } else {
+          await installFile(path);
+        }
         dispatch({ type: "installed", slug });
         onInstalled();
       } catch (error) {
-        dispatch({ type: "failed", slug, message: formatError(error) });
+        // Un fichier que personne ici ne sait installer n'est pas une panne :
+        // il est arrivé, il est quelque part, et la ligne le dit.
+        if (errorCode(error) === "not_installable") {
+          dispatch({ type: "saved", slug, path });
+        } else {
+          dispatch({ type: "failed", slug, message: formatError(error) });
+        }
       }
     })();
-  }, [jobs, onInstalled]);
+  }, [jobs, canInstall, onInstalled]);
 
   const enqueue = useCallback(
     (row: RepoRow, assetName: string | null) => dispatch({ type: "enqueue", row, assetName }),

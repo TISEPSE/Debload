@@ -163,7 +163,7 @@ describe("RepoLine", () => {
       <RepoLine
         row={row}
         state={release()}
-        job={job({ phase: "ready", info })}
+        job={job({ phase: "ready", path: info.sourcePath })}
         onInstall={noop}
         onCancel={noop}
         onRemove={noop}

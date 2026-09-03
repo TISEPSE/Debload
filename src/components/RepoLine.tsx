@@ -112,8 +112,9 @@ export function RepoLine({
         return <span className="repo__state repo__state--current">Installé</span>;
       case "saved":
         return (
-          <span className="repo__state repo__state--current">
-            Enregistré ici : <code className="result__path">{current.path}</code>
+          <span className="repo__state">
+            Téléchargé, mais Debload ne sait pas l'installer ici :{" "}
+            <code className="result__path">{current.path}</code>
           </span>
         );
       case "failed":
@@ -190,7 +191,7 @@ export function RepoLine({
 
         {job?.state.phase === "failed" && job.state.logs.length > 0 && (
           <details className="details">
-            <summary>Voir la sortie d'apt</summary>
+            <summary>Voir la sortie de l'installation</summary>
             <LogPanel logs={job.state.logs} />
           </details>
         )}

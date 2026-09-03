@@ -14,6 +14,9 @@ export const inspectDeb = (path: string) => invoke<DebInfo>("inspect_deb", { pat
 
 export const installDeb = (path: string) => invoke<OperationResult>("install_deb", { path });
 
+/** Hors Debian : confie le fichier téléchargé à l'installeur du système. */
+export const installFile = (path: string) => invoke<void>("install_file", { path });
+
 export const listManaged = () => invoke<ManagedPackage[]>("list_managed");
 
 export const uninstall = (name: string, purge: boolean) =>
@@ -71,6 +74,8 @@ export function formatError(error: unknown): string {
       return "Nom de paquet invalide.";
     case "not_launchable":
       return `${err.detail} n'installe pas d'application à ouvrir.`;
+    case "not_installable":
+      return `Debload ne sait pas installer ${err.detail} sur ce système.`;
     case "invalid_repo":
       return `Dépôt GitHub non reconnu : ${err.detail}`;
     case "no_release":
@@ -119,6 +124,7 @@ const PERMANENT = new Set([
   "invalid_repo",
   "no_deb_asset",
   "untrusted_url",
+  "not_installable",
 ]);
 
 /** Vrai si réessayer plus tard a une chance d'aboutir. */

@@ -3,6 +3,7 @@ pub mod deb;
 pub mod error;
 pub mod github;
 pub mod history;
+pub mod installer;
 pub mod launch;
 pub mod pkg;
 pub mod privileged;
@@ -14,6 +15,7 @@ pub mod runner;
 pub mod settings;
 pub mod win_apps;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tauri::Manager;
@@ -46,12 +48,17 @@ pub fn run() {
                     .download_dir()
                     .or_else(|_| app.path().home_dir())
                     .unwrap_or_else(|_| data_dir.clone()),
+                home_dir: app.path().home_dir().unwrap_or_else(|_| data_dir.clone()),
+                // macOS et lui seul range les applications ici ; ailleurs ce
+                // chemin ne sert à personne.
+                applications_dir: PathBuf::from("/Applications"),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::inspect_deb,
             commands::install_deb,
+            commands::install_file,
             commands::launch_app,
             commands::list_managed,
             commands::list_repos,

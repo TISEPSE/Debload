@@ -10,6 +10,7 @@ const {
   prepareFromRepo,
   downloadFromRepo,
   installDeb,
+  installFile,
   listen,
 } = vi.hoisted(() => ({
   listRepos: vi.fn(),
@@ -19,6 +20,7 @@ const {
   prepareFromRepo: vi.fn(),
   downloadFromRepo: vi.fn(),
   installDeb: vi.fn(),
+  installFile: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -33,6 +35,7 @@ vi.mock("../lib/api", async () => {
     prepareFromRepo: (s: string, a: string | null) => prepareFromRepo(s, a),
     downloadFromRepo: (s: string, a: string | null) => downloadFromRepo(s, a),
     installDeb: (p: string) => installDeb(p),
+    installFile: (p: string) => installFile(p),
   };
 });
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
@@ -217,17 +220,32 @@ describe("ReposView", () => {
     expect(screen.queryByText(/déjà installée/i)).toBeNull();
   });
 
-  it("se contente de télécharger là où il ne peut pas installer", async () => {
+  it("installe aussi là où apt n'existe pas, par l'installeur du système", async () => {
+    downloadFromRepo.mockResolvedValue("C:\Users\b\Downloads\MailFlow-setup.exe");
+    installFile.mockResolvedValue(undefined);
+
+    render(<Harness environment={windows} />);
+    fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
+
+    await waitFor(() =>
+      expect(installFile).toHaveBeenCalledWith("C:\Users\b\Downloads\MailFlow-setup.exe"),
+    );
+    // apt n'a rien à faire ici, et le .deb non plus.
+    expect(installDeb).not.toHaveBeenCalled();
+    expect(prepareFromRepo).not.toHaveBeenCalled();
+  });
+
+  it("dit où le fichier est resté quand rien ne sait l'installer", async () => {
     refreshRepo.mockResolvedValue({ ...rel, installable: false, updateAvailable: false });
-    downloadFromRepo.mockResolvedValue("/home/b/Téléchargements/MailFlow.msi");
+    downloadFromRepo.mockResolvedValue("/home/b/Téléchargements/MailFlow.tar.gz");
+    installFile.mockRejectedValue({ code: "not_installable", detail: "MailFlow.tar.gz" });
 
     render(<Harness environment={windows} />);
     fireEvent.click(await screen.findByRole("button", { name: /télécharger/i }));
 
     await waitFor(() =>
-      expect(screen.getByText("/home/b/Téléchargements/MailFlow.msi")).toBeTruthy(),
+      expect(screen.getByText("/home/b/Téléchargements/MailFlow.tar.gz")).toBeTruthy(),
     );
-    expect(prepareFromRepo).not.toHaveBeenCalled();
     expect(installDeb).not.toHaveBeenCalled();
   });
 

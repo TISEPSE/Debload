@@ -1,18 +1,19 @@
-import type { DebInfo, LogLine, ProgressEvent, RepoRow } from "./types";
+import type { LogLine, ProgressEvent, RepoRow } from "./types";
 
 /**
  * Où en est une ligne mise en file.
  *
  * `ready` est le palier entre les deux postes de travail : le fichier est
- * arrivé, il attend que l'installation précédente libère la place.
+ * arrivé — son chemin est tout ce qu'il en reste à savoir — et il attend que
+ * l'installation précédente libère la place.
  */
 export type JobState =
   | { phase: "queued" }
   | { phase: "downloading"; progress: ProgressEvent | null }
-  | { phase: "ready"; info: DebInfo }
+  | { phase: "ready"; path: string }
   | { phase: "installing"; progress: ProgressEvent | null; logs: LogLine[] }
   | { phase: "done" }
-  /** Téléchargement seul : rien n'est installé, on dit où le fichier est. */
+  /** Personne ici ne sait installer ce fichier : on dit au moins où il est. */
   | { phase: "saved"; path: string }
   | { phase: "failed"; message: string; logs: LogLine[] };
 
@@ -28,7 +29,7 @@ export type QueueAction =
   | { type: "cancel"; slug: string }
   | { type: "download_started"; slug: string }
   | { type: "download_progress"; event: ProgressEvent }
-  | { type: "downloaded"; slug: string; info: DebInfo }
+  | { type: "downloaded"; slug: string; path: string }
   | { type: "saved"; slug: string; path: string }
   | { type: "install_started"; slug: string }
   | { type: "install_progress"; event: ProgressEvent }
@@ -124,11 +125,14 @@ export function queueReducer(queue: Job[], action: QueueAction): Job[] {
     case "downloaded":
       return move(queue, action.slug, ["downloading"], () => ({
         phase: "ready",
-        info: action.info,
+        path: action.path,
       }));
 
+    // Le fichier est arrivé mais rien ne sait l'installer : la ligne s'arrête
+    // là, en disant où il est. Ce verdict tombe après le téléchargement comme
+    // après une tentative d'installation.
     case "saved":
-      return move(queue, action.slug, ["downloading"], () => ({
+      return move(queue, action.slug, ["downloading", "installing"], () => ({
         phase: "saved",
         path: action.path,
       }));

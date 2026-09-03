@@ -58,8 +58,8 @@ pub struct RepoRelease {
     /// Vrai quand ces informations sortent du cache faute d'avoir pu joindre
     /// GitHub : la ligne reste lisible, en annonçant qu'elle date.
     pub stale: bool,
-    /// Vrai si Debload sait installer ce fichier ici. Ailleurs qu'à Debian il
-    /// ne fait que le télécharger.
+    /// Vrai si Debload sait installer lui-même l'un des fichiers retenus.
+    /// Faux pour une archive qu'il ne saurait que déposer.
     pub installable: bool,
 }
 
@@ -88,6 +88,19 @@ fn installed_version(
         .ok()
         .filter(|state| state.installed)
         .and_then(|state| state.version)
+}
+
+/// Vrai si Debload sait installer au moins l'un de ces fichiers.
+///
+/// La question ne se pose pas à la plateforme seule : sur Fedora, une AppImage
+/// se pose, une archive `.tar.gz` ne se pose pas. C'est le fichier retenu qui
+/// décide, et le bouton en dépend — « Installer » ou « Télécharger ».
+fn installable(assets: &[Asset], platform: Platform) -> bool {
+    let extensions = platform.installable_extensions();
+    assets.iter().any(|asset| {
+        let name = asset.name.to_lowercase();
+        extensions.iter().any(|ext| name.ends_with(ext))
+    })
 }
 
 /// Vrai si la release dépasse ce qui est installé.
@@ -164,6 +177,7 @@ fn describe(
     let platform = settings.platform_or_detected();
     let arch = github::cached_host_architecture(runner);
     let assets = github::select_assets(&release.assets, &arch, platform);
+    let can_install = installable(&assets, platform);
 
     // Le nom du dépôt tient lieu de nom d'application hors Debian : la
     // normalisation rapproche « HeroicGamesLauncher » de « Heroic Games
@@ -193,7 +207,7 @@ fn describe(
         update_available,
         checked_at,
         stale,
-        installable: platform.installs_packages(),
+        installable: can_install,
     }
 }
 
@@ -494,6 +508,17 @@ mod tests {
         assert!(rows.iter().all(|r| r.installed.is_none()));
         // Trois racines, et pas trois par ligne.
         assert_eq!(fake.calls().len(), 3);
+    }
+
+    #[test]
+    fn what_can_be_installed_depends_on_the_file_as_much_as_the_system() {
+        // Windows sait poser un installeur, pas déplier une archive.
+        assert!(installable(&[asset("MailFlow-setup.exe")], Platform::Windows));
+        assert!(!installable(&[asset("MailFlow-linux.tar.gz")], Platform::Windows));
+
+        // Sur une distribution sans dpkg, l'AppImage se pose, la tarball non.
+        assert!(installable(&[asset("App.AppImage")], Platform::LinuxOther));
+        assert!(!installable(&[asset("app.tar.xz")], Platform::LinuxOther));
     }
 
     #[test]

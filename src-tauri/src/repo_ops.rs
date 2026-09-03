@@ -241,7 +241,13 @@ pub fn refresh(
     if !force {
         let cache = release_cache::read(cache_path);
         if let Some(entry) = cache.get(slug).filter(|_| cache.is_fresh(slug, max_age)) {
-            return Ok(describe(&local, slug, &entry.release, entry.fetched_at, false));
+            return Ok(describe(
+                &local,
+                slug,
+                &entry.release,
+                entry.fetched_at,
+                false,
+            ));
         }
     }
 
@@ -267,7 +273,13 @@ pub fn refresh(
         Err(DebloadError::Offline(detail)) => {
             let cache = release_cache::read(cache_path);
             match cache.get(slug) {
-                Some(entry) => Ok(describe(&local, slug, &entry.release, entry.fetched_at, true)),
+                Some(entry) => Ok(describe(
+                    &local,
+                    slug,
+                    &entry.release,
+                    entry.fetched_at,
+                    true,
+                )),
                 None => Err(DebloadError::Offline(detail)),
             }
         }

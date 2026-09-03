@@ -984,7 +984,8 @@ mod tests {
 pub fn list_repos(state: State<'_, AppState>) -> Result<Vec<RepoRow>, DebloadError> {
     let catalog = repos::load_catalog(&state.catalog_path);
     let user = repos::load_user(&state.repos_path);
-    let rows = repo_ops::rows(state.runner.as_ref(), &catalog, &user);
+    let platform = settings::load(&state.settings_path).platform_or_detected();
+    let rows = repo_ops::rows(state.runner.as_ref(), &catalog, &user, platform);
 
     // Un dépôt retiré n'a plus de raison d'occuper le cache.
     let slugs: Vec<String> = rows.iter().map(|r| r.slug.clone()).collect();

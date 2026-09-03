@@ -114,6 +114,46 @@ pub fn is_newer(runner: &dyn CommandRunner, candidate: &str, installed: &str) ->
         .unwrap_or(false)
 }
 
+/// Compare deux numéros de version là où dpkg n'existe pas.
+///
+/// Hors Debian, il n'y a pas d'arbitre : on s'en tient aux nombres du numéro,
+/// comparés de gauche à droite, un rang absent valant zéro. C'est ce qui
+/// distingue `1.10` de `1.9`, et cela suffit aux numéros que publient les
+/// releases GitHub. Les suffixes (`-beta`, `~rc1`) sont ignorés : dans le
+/// doute, Debload n'annonce pas de mise à jour.
+pub fn is_newer_plain(candidate: &str, installed: &str) -> bool {
+    if candidate == installed {
+        return false;
+    }
+
+    let numbers = |v: &str| -> Vec<u64> {
+        v.split(|c: char| !c.is_ascii_digit())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    };
+
+    let left = numbers(candidate);
+    let right = numbers(installed);
+    // Un numéro sans le moindre chiffre ne se compare à rien : annoncer une
+    // mise à jour sur cette base serait deviner.
+    if left.is_empty() || right.is_empty() {
+        return false;
+    }
+
+    let len = left.len().max(right.len());
+
+    for i in 0..len {
+        let a = left.get(i).copied().unwrap_or(0);
+        let b = right.get(i).copied().unwrap_or(0);
+        if a != b {
+            return a > b;
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,6 +266,19 @@ mod tests {
         let fake = FakeRunner::new();
         fake.on(&["--compare-versions"], CommandOutput::fail(1, ""));
         assert!(!is_newer(&fake, "0.1.7", "0.1.8"));
+    }
+
+    #[test]
+    fn compares_versions_without_dpkg_where_there_is_none() {
+        assert!(is_newer_plain("1.10.0", "1.9.0"));
+        assert!(is_newer_plain("0.2.0", "0.1.8"));
+        assert!(is_newer_plain("1.2.1", "1.2"));
+        assert!(!is_newer_plain("0.1.8", "0.1.8"));
+        assert!(!is_newer_plain("1.9.0", "1.10.0"));
+        // Rien à comparer : pas de mise à jour annoncée.
+        assert!(!is_newer_plain("1.2.0", "version inconnue"));
+        // Un rang absent vaut zéro : « 1.2 » et « 1.2.0 » sont la même chose.
+        assert!(!is_newer_plain("1.2", "1.2.0"));
     }
 
     #[test]

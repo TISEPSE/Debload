@@ -12,6 +12,7 @@ pub mod repo_ops;
 pub mod repos;
 pub mod runner;
 pub mod settings;
+pub mod win_apps;
 
 use std::sync::Arc;
 

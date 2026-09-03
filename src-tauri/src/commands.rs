@@ -661,15 +661,14 @@ mod tests {
     /// désinstallation silencieuse.
     fn mailflow_registry() -> String {
         [
-            "HKEY_CURRENT_USER\SOFTWARE\Uninstall\MailFlow",
+            r"HKEY_CURRENT_USER\SOFTWARE\Uninstall\MailFlow",
             "    DisplayName    REG_SZ    MailFlow",
             "    DisplayVersion    REG_SZ    0.1.8",
             "    InstallDate    REG_SZ    20260903",
-            "    QuietUninstallString    REG_SZ    \"C:\Apps\Uninstall.exe\" /S",
+            r#"    QuietUninstallString    REG_SZ    "C:\Apps\Uninstall.exe" /S"#,
             "",
         ]
-        .join("
-")
+        .join("\n")
     }
 
     /// Un faux exécuteur pour qui la base de registre ne contient que MailFlow.
@@ -705,10 +704,9 @@ mod tests {
         fake.on(
             &["reg", "HKCU"],
             CommandOutput::ok(
-                "HKEY_CURRENT_USER\SOFTWARE\Uninstall\Jeu
-                     DisplayName    REG_SZ    Un jeu quelconque
-                     UninstallString    REG_SZ    C:\Jeu\unins.exe
-",
+                "HKEY_CURRENT_USER\\SOFTWARE\\Uninstall\\Jeu\n    \
+                 DisplayName    REG_SZ    Un jeu quelconque\n    \
+                 UninstallString    REG_SZ    C:\\Jeu\\unins.exe\n",
             ),
         );
         fake.on(&["reg"], CommandOutput::fail(1, "clé introuvable"));
@@ -736,7 +734,7 @@ mod tests {
         assert_eq!(result.version, "0.1.8");
 
         let call = fake.calls().into_iter().last().unwrap();
-        assert_eq!(call[0], "C:\Apps\Uninstall.exe");
+        assert_eq!(call[0], r"C:\Apps\Uninstall.exe");
         assert_eq!(call[1], "/S");
     }
 

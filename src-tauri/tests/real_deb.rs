@@ -1,7 +1,11 @@
 //! Test d'intégration : construit un vrai paquet .deb avec dpkg-deb, puis le
 //! relit avec le chemin de production complet (RealRunner + read_deb_info).
 //!
-//! N'exige aucun privilège : l'inspection d'une archive se fait sans root.
+//! N'exige aucun privilège : l'inspection d'une archive se fait sans root. Il
+//! exige en revanche `dpkg-deb`, donc le système que Debload sert : ailleurs,
+//! le fichier entier se compile à vide plutôt que d'échouer sur une commande
+//! introuvable.
+#![cfg(unix)]
 
 use std::path::Path;
 use std::process::Command;

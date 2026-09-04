@@ -749,6 +749,10 @@ mod tests {
         assert_eq!(parse_mount_point(output), None);
     }
 
+    // Le point de montage se reconnaît à sa barre oblique initiale, comme en
+    // rend hdiutil. Un dossier temporaire de Windows commence par « C:\ » et
+    // ne ressemble à rien de ce que macOS produirait.
+    #[cfg(unix)]
     #[test]
     fn a_disk_image_is_mounted_copied_and_ejected() {
         let dir = tempfile::tempdir().unwrap();
@@ -784,6 +788,7 @@ mod tests {
         assert!(calls[2].contains(&"detach".to_string()));
     }
 
+    #[cfg(unix)]
     #[test]
     fn an_image_is_ejected_even_when_the_copy_fails() {
         let dir = tempfile::tempdir().unwrap();

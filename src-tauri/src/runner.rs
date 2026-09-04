@@ -319,6 +319,12 @@ impl FakeRunner {
 mod tests {
     use super::*;
 
+    // Les quatre épreuves qui suivent lancent de vrais programmes, désignés par
+    // leur chemin absolu : `/usr/bin/echo`, `/bin/sh`. Elles n'ont de sens que
+    // là où ces chemins existent — c'est-à-dire sur le système que Debload
+    // installe, et sur lequel la CI les exécute.
+
+    #[cfg(unix)]
     #[test]
     fn real_runner_captures_stdout_and_status() {
         let out = RealRunner.run("/usr/bin/echo", &["bonjour"]).unwrap();
@@ -326,6 +332,7 @@ mod tests {
         assert_eq!(out.stdout.trim(), "bonjour");
     }
 
+    #[cfg(unix)]
     #[test]
     fn real_runner_passes_arguments_literally() {
         // Un argument contenant un métacaractère de shell doit rester une chaîne,
@@ -334,6 +341,7 @@ mod tests {
         assert_eq!(out.stdout.trim(), "a; rm -rf /");
     }
 
+    #[cfg(unix)]
     #[test]
     fn real_runner_streams_lines_in_order() {
         let seen = std::sync::Mutex::new(Vec::new());
@@ -346,6 +354,7 @@ mod tests {
         assert_eq!(*seen.lock().unwrap(), vec!["stdout:un", "stdout:deux"]);
     }
 
+    #[cfg(unix)]
     #[test]
     fn real_runner_leaves_the_child_without_an_input() {
         // Une commande lancée par Debload n'a personne pour lui répondre :

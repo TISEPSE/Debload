@@ -892,6 +892,10 @@ mod tests {
         assert!(!saved.entries[0].installed_at.is_empty());
     }
 
+    // Ces deux épreuves posent un vrai fichier sur disque et lisent une
+    // entrée .desktop : des chemins et des outils qui n'existent qu'aux
+    // endroits où apt règne.
+    #[cfg(unix)]
     #[test]
     fn install_invokes_apt_get_with_absolute_path_and_no_shell() {
         let dir = tempfile::tempdir().unwrap();
@@ -1081,6 +1085,7 @@ mod tests {
         assert_eq!(crate::history::load(&hist).entries.len(), 1);
     }
 
+    #[cfg(unix)]
     #[test]
     fn install_reports_a_launchable_application() {
         let dir = tempfile::tempdir().unwrap();

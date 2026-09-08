@@ -3,7 +3,6 @@ import type {
   DebInfo,
   DebloadError,
   Environment,
-  ManagedPackage,
   OperationResult,
   RepoRelease,
   RepoRow,
@@ -14,13 +13,18 @@ export const inspectDeb = (path: string) => invoke<DebInfo>("inspect_deb", { pat
 
 export const installDeb = (path: string) => invoke<OperationResult>("install_deb", { path });
 
-/** Hors Debian : confie le fichier téléchargé à l'installeur du système. */
-export const installFile = (path: string) => invoke<void>("install_file", { path });
+/**
+ * Hors Debian : confie le fichier téléchargé à l'installeur du système.
+ *
+ * Le dépôt d'où vient le fichier voyage avec lui : là où le système ne garde
+ * pas trace de ce qui est posé, c'est Debload qui note, et il note par dépôt.
+ */
+export const installFile = (path: string, slug: string) =>
+  invoke<void>("install_file", { path, slug });
 
-export const listManaged = () => invoke<ManagedPackage[]>("list_managed");
-
-export const uninstall = (name: string, purge: boolean) =>
-  invoke<OperationResult>("uninstall", { name, purge });
+/** Retire ce qu'un dépôt du catalogue a installé, quel qu'en soit le moyen. */
+export const uninstallRepo = (slug: string, purge: boolean) =>
+  invoke<OperationResult>("uninstall_repo", { slug, purge });
 
 export const launchApp = (name: string) => invoke<void>("launch_app", { name });
 

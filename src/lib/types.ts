@@ -10,16 +10,6 @@ export interface DebInfo {
   alreadyInstalled: string | null;
 }
 
-export interface ManagedPackage {
-  name: string;
-  version: string;
-  architecture: string;
-  sourceFile: string;
-  installedAt: string;
-  summary: string;
-  removable: boolean;
-}
-
 export interface OperationResult {
   package: string;
   version: string;
@@ -63,7 +53,16 @@ export interface RepoRow {
   /** Paquet livré, connu seulement après une première installation. */
   package: string | null;
   installed: string | null;
-  /** Vrai pour une entrée du catalogue livré : elle se masque, pas se supprime. */
+  /**
+   * Vrai si Debload saurait retirer ce qui est installé : faux sur un paquet
+   * système essentiel, sur une application qui n'a laissé aucun désinstalleur,
+   * et sur ce qui a été posé en dehors de Debload.
+   */
+  removable: boolean;
+  /**
+   * Vrai pour une entrée du catalogue livré : elle ne se retire pas de la
+   * liste, à la différence d'un dépôt ajouté à la main.
+   */
   bundled: boolean;
 }
 
@@ -107,7 +106,8 @@ export interface Environment {
   canInstall: boolean;
   /**
    * Vrai si Debload sait dire ce qui est installé ici et le retirer : dpkg sur
-   * Debian, la base de registre sous Windows.
+   * Debian, la base de registre sous Windows, et ailleurs son propre registre
+   * de ce qu'il a posé.
    */
   managesApps: boolean;
 }

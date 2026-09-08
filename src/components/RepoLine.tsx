@@ -16,7 +16,15 @@ interface RepoLineProps {
   onInstall: (assetName: string | null) => void;
   /** Sort la ligne de la file. Sans effet une fois les octets partis. */
   onCancel?: () => void;
-  onRemove: () => void;
+  /** Retire du système ce que ce dépôt a installé. */
+  onUninstall: () => void;
+  /**
+   * Retire le dépôt de la liste. Absent sur une entrée du catalogue livré,
+   * qui ne s'enlève pas : elle reviendrait à la mise à jour suivante.
+   */
+  onForget?: () => void;
+  /** Vrai pendant que la désinstallation de cette ligne travaille. */
+  removing?: boolean;
 }
 
 /**
@@ -39,13 +47,29 @@ function moving(state: JobState): boolean {
   return state.phase === "downloading" || state.phase === "installing";
 }
 
+/**
+ * Ce qu'un bouton « Désinstaller » inactif doit expliquer.
+ *
+ * Un bouton grisé sans raison ressemble à une panne. La ligne ne sait pas
+ * laquelle des trois raisons s'applique — elle ne reçoit qu'un « non » —, mais
+ * une phrase les couvre toutes, et chacune est une bonne raison.
+ */
+function uninstallHint(row: RepoRow): string {
+  return row.removable
+    ? "Retirer cette application du système"
+    : "Debload ne peut pas la retirer : ce n'est pas lui qui l'a installée, " +
+        "elle n'a laissé aucun désinstalleur, ou le système la protège";
+}
+
 export function RepoLine({
   row,
   state,
   job,
   onInstall,
   onCancel,
-  onRemove,
+  onUninstall,
+  onForget,
+  removing = false,
 }: RepoLineProps) {
   const [choosing, setChoosing] = useState(false);
 
@@ -129,9 +153,23 @@ export function RepoLine({
     return ready?.updateAvailable ? "Mettre à jour" : "Installer";
   };
 
-  /** Le bouton de gauche : lancer, sortir de la file, ou rien du tout. */
+  /**
+   * Vrai quand il n'y a rien à installer ici : l'application est là, dans sa
+   * dernière version. La ligne n'a plus qu'à proposer de la retirer.
+   */
+  const settled = row.installed !== null && ready !== null && !ready.updateAvailable;
+
+  /**
+   * Le bouton principal : lancer, sortir de la file, ou rien du tout.
+   *
+   * Rien non plus quand l'application est installée et à jour : proposer
+   * « Installer » là où il n'y a plus rien à installer était justement ce qui
+   * rendait la ligne muette sur son propre état.
+   */
   const action = () => {
     if (!job) {
+      if (settled) return null;
+
       return (
         <button
           type="button"
@@ -218,19 +256,32 @@ export function RepoLine({
 
       <div className="repo__actions">
         {action()}
-        <button
-          type="button"
-          className="button button--danger"
-          disabled={job !== undefined && moving(job.state)}
-          onClick={onRemove}
-          title={
-            row.bundled
-              ? "Masquer ce dépôt du catalogue livré"
-              : "Retirer ce dépôt de la liste"
-          }
-        >
-          {row.bundled ? "Masquer" : "Retirer"}
-        </button>
+
+        {/* Désinstaller retire l'application ; Retirer retire le dépôt de la
+            liste. Deux gestes différents, qui peuvent se côtoyer. */}
+        {!job && row.installed !== null && (
+          <button
+            type="button"
+            className="button button--danger"
+            disabled={!row.removable || removing}
+            onClick={onUninstall}
+            title={uninstallHint(row)}
+          >
+            {removing ? "Suppression…" : "Désinstaller"}
+          </button>
+        )}
+
+        {onForget && (
+          <button
+            type="button"
+            className="button button--ghost"
+            disabled={(job !== undefined && moving(job.state)) || removing}
+            onClick={onForget}
+            title="Retirer ce dépôt de la liste, sans toucher au système"
+          >
+            Retirer
+          </button>
+        )}
       </div>
     </li>
   );

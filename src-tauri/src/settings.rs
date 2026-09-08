@@ -36,10 +36,11 @@ impl Platform {
     /// Vrai là où Debload sait dire ce qui est installé, et le retirer.
     ///
     /// Deux systèmes tiennent cette liste à sa place : dpkg sur Debian, la base
-    /// de registre sous Windows. Ailleurs, une application posée ne laisse
-    /// aucune trace consultable — ni onglet, ni désinstallation.
+    /// de registre sous Windows. Sur les deux autres, personne ne la tient —
+    /// mais c'est Debload qui a posé le fichier, alors il note ce qu'il a fait
+    /// et sait donc le défaire. Aucun système n'est plus muet que les autres.
     pub fn manages_apps(self) -> bool {
-        matches!(self, Platform::Debian | Platform::Windows)
+        true
     }
 
     /// Extensions que Debload sait installer lui-même sur ce système.
@@ -167,11 +168,13 @@ mod tests {
     }
 
     #[test]
-    fn only_two_systems_keep_track_of_what_is_installed() {
+    fn every_system_keeps_track_of_what_is_installed() {
+        // Deux d'entre eux le savent d'eux-mêmes, les deux autres parce que
+        // Debload note ce qu'il pose. Le résultat est le même pour l'interface.
         assert!(Platform::Debian.manages_apps());
         assert!(Platform::Windows.manages_apps());
-        assert!(!Platform::LinuxOther.manages_apps());
-        assert!(!Platform::MacOs.manages_apps());
+        assert!(Platform::LinuxOther.manages_apps());
+        assert!(Platform::MacOs.manages_apps());
     }
 
     #[test]

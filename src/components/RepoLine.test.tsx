@@ -12,6 +12,7 @@ const row: RepoRow = {
   description: "Tri automatique de la boîte Gmail",
   package: "mail-flow",
   installed: "0.1.8",
+  removable: true,
   bundled: true,
 };
 
@@ -37,6 +38,9 @@ function release(over: Partial<RepoRelease> = {}): ReleaseState {
 
 const noop = () => {};
 
+/** Un dépôt du catalogue jamais installé ici. */
+const fresh: RepoRow = { ...row, package: null, installed: null, removable: false };
+
 const info: DebInfo = {
   package: "mail-flow",
   version: "0.1.9",
@@ -56,7 +60,7 @@ function job(state: JobState): Job {
 
 describe("RepoLine", () => {
   it("annonce une mise à jour et la version installée", () => {
-    render(<RepoLine row={row} state={release()} onInstall={noop} onRemove={noop} />);
+    render(<RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />);
     expect(screen.getByText(/v0\.1\.9 disponible/)).toBeTruthy();
     expect(screen.getByText(/installé : 0\.1\.8/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /mettre à jour/i })).toBeTruthy();
@@ -68,20 +72,22 @@ describe("RepoLine", () => {
         row={row}
         state={release({ updateAvailable: false })}
         onInstall={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
     expect(screen.getByText(/à jour \(0\.1\.8\)/i)).toBeTruthy();
-    expect(screen.getByRole("button", { name: /^installer$/i })).toBeTruthy();
+    // Il n'y a plus rien à installer : le seul geste utile est de la retirer.
+    expect(screen.queryByRole("button", { name: /^installer$/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /désinstaller/i })).toBeTruthy();
   });
 
   it("distingue un dépôt jamais installé", () => {
     render(
       <RepoLine
-        row={{ ...row, package: null, installed: null }}
+        row={fresh}
         state={release({ updateAvailable: false })}
         onInstall={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
     expect(screen.getByText(/pas installé/i)).toBeTruthy();
@@ -89,7 +95,7 @@ describe("RepoLine", () => {
 
   it("installe directement quand un seul paquet convient", () => {
     const onInstall = vi.fn();
-    render(<RepoLine row={row} state={release()} onInstall={onInstall} onRemove={noop} />);
+    render(<RepoLine row={row} state={release()} onInstall={onInstall} onUninstall={noop} />);
     fireEvent.click(screen.getByRole("button", { name: /mettre à jour/i }));
     expect(onInstall).toHaveBeenCalledWith(null);
   });
@@ -103,7 +109,7 @@ describe("RepoLine", () => {
       ],
     });
 
-    render(<RepoLine row={row} state={state} onInstall={onInstall} onRemove={noop} />);
+    render(<RepoLine row={row} state={state} onInstall={onInstall} onUninstall={noop} />);
 
     fireEvent.click(screen.getByRole("button", { name: /choisir/i }));
     expect(onInstall).not.toHaveBeenCalled();
@@ -114,7 +120,7 @@ describe("RepoLine", () => {
 
   it("désactive l'action quand la release n'a aucun fichier utilisable", () => {
     const state = release({ assets: [], updateAvailable: false });
-    render(<RepoLine row={row} state={state} onInstall={noop} onRemove={noop} />);
+    render(<RepoLine row={fresh} state={state} onInstall={noop} onUninstall={noop} />);
     expect(screen.getByText(/aucun fichier utilisable dans v0\.1\.9/i)).toBeTruthy();
     const button = screen.getByRole("button", { name: /^installer$/i }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
@@ -129,7 +135,7 @@ describe("RepoLine", () => {
         job={job({ phase: "queued" })}
         onInstall={noop}
         onCancel={onCancel}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
 
@@ -149,7 +155,7 @@ describe("RepoLine", () => {
         })}
         onInstall={noop}
         onCancel={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
 
@@ -166,7 +172,7 @@ describe("RepoLine", () => {
         job={job({ phase: "ready", path: info.sourcePath })}
         onInstall={noop}
         onCancel={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
     expect(screen.getByText(/attend l'installation/i)).toBeTruthy();
@@ -180,7 +186,7 @@ describe("RepoLine", () => {
         job={job({ phase: "installing", progress: null, logs: [] })}
         onInstall={noop}
         onCancel={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
 
@@ -202,7 +208,7 @@ describe("RepoLine", () => {
         })}
         onInstall={onInstall}
         onCancel={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
 
@@ -221,7 +227,7 @@ describe("RepoLine", () => {
         job={job({ phase: "saved", path: "/home/b/Téléchargements/MailFlow.msi" })}
         onInstall={noop}
         onCancel={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
     expect(screen.getByText("/home/b/Téléchargements/MailFlow.msi")).toBeTruthy();
@@ -231,14 +237,95 @@ describe("RepoLine", () => {
     const state = release({ installable: false, updateAvailable: false });
     render(
       <RepoLine
-        row={{ ...row, package: null, installed: null }}
+        row={fresh}
         state={state}
         onInstall={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
     expect(screen.getByRole("button", { name: /télécharger/i })).toBeTruthy();
     expect(screen.getByText(/disponible — dernière version/i)).toBeTruthy();
+  });
+
+  it("propose de mettre à jour et de désinstaller côte à côte", () => {
+    const onUninstall = vi.fn();
+    render(<RepoLine row={row} state={release()} onInstall={noop} onUninstall={onUninstall} />);
+
+    // Deux gestes distincts sur une même ligne : poser la nouvelle version,
+    // ou retirer celle qui est là.
+    expect(screen.getByRole("button", { name: /mettre à jour/i })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /désinstaller/i }));
+    expect(onUninstall).toHaveBeenCalled();
+  });
+
+  it("ne propose pas de désinstaller ce qui n'est pas installé", () => {
+    render(
+      <RepoLine
+        row={fresh}
+        state={release({ updateAvailable: false })}
+        onInstall={noop}
+        onUninstall={noop}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /désinstaller/i })).toBeNull();
+  });
+
+  it("explique pourquoi il ne peut pas retirer une application", () => {
+    render(
+      <RepoLine
+        row={{ ...row, removable: false }}
+        state={release({ updateAvailable: false })}
+        onInstall={noop}
+        onUninstall={noop}
+      />,
+    );
+
+    const button = screen.getByRole("button", {
+      name: /désinstaller/i,
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    // Un bouton grisé sans raison ressemble à une panne.
+    expect(button.title).toMatch(/ne peut pas la retirer/i);
+  });
+
+  it("ne laisse retirer de la liste qu'un dépôt ajouté à la main", () => {
+    const onForget = vi.fn();
+    const { unmount } = render(
+      <RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />,
+    );
+    // Une entrée du catalogue livré reviendrait à la mise à jour suivante :
+    // rien ne propose de l'enlever.
+    expect(screen.queryByRole("button", { name: /^retirer$/i })).toBeNull();
+    unmount();
+
+    render(
+      <RepoLine
+        row={{ ...row, bundled: false }}
+        state={release()}
+        onInstall={noop}
+        onUninstall={noop}
+        onForget={onForget}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^retirer$/i }));
+    expect(onForget).toHaveBeenCalled();
+  });
+
+  it("annonce la suppression en cours sur sa propre ligne", () => {
+    render(
+      <RepoLine
+        row={row}
+        state={release({ updateAvailable: false })}
+        onInstall={noop}
+        onUninstall={noop}
+        removing
+      />,
+    );
+
+    const button = screen.getByRole("button", {
+      name: /suppression…/i,
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
   });
 
   it("annonce la reprise automatique après une panne passagère", () => {
@@ -251,7 +338,7 @@ describe("RepoLine", () => {
           attempt: 2,
         }}
         onInstall={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
 
@@ -266,7 +353,7 @@ describe("RepoLine", () => {
       stale: true,
       checkedAt: Math.floor(Date.now() / 1000) - 7200,
     });
-    render(<RepoLine row={row} state={state} onInstall={noop} onRemove={noop} />);
+    render(<RepoLine row={row} state={state} onInstall={noop} onUninstall={noop} />);
 
     expect(screen.getByText(/v0\.1\.9 disponible/)).toBeTruthy();
     expect(screen.getByText(/hors ligne — dernière vérification il y a 2 h/i)).toBeTruthy();
@@ -278,31 +365,13 @@ describe("RepoLine", () => {
         row={row}
         state={{ status: "error", message: "TISEPSE/MailFlow n'a publié aucune release." }}
         onInstall={noop}
-        onRemove={noop}
+        onUninstall={noop}
       />,
     );
     expect(screen.getByText(/n'a publié aucune release/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /réessayer/i })).toBeNull();
   });
 
-  it("masque une entrée du catalogue et retire une entrée ajoutée", () => {
-    const onRemove = vi.fn();
-    const { rerender } = render(
-      <RepoLine row={row} state={release()} onInstall={noop} onRemove={onRemove} />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /masquer/i }));
-    expect(onRemove).toHaveBeenCalledOnce();
-
-    rerender(
-      <RepoLine
-        row={{ ...row, bundled: false }}
-        state={release()}
-        onInstall={noop}
-        onRemove={onRemove}
-      />,
-    );
-    expect(screen.getByRole("button", { name: /retirer/i })).toBeTruthy();
-  });
 });
 
 describe("sinceLabel", () => {

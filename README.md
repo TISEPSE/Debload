@@ -8,11 +8,12 @@ Installe un paquet `.deb` déposé dans sa fenêtre, et désinstalle en un clic 
   ses métadonnées, puis lance `apt-get install`, ce qui résout les dépendances au
   passage. Une barre d'avancement suit ce que rapporte apt.
 - **Dépôts** — un catalogue de dépôts GitHub livré avec l'application
-  (`/usr/lib/Debload/repos.json`). Chaque ligne indique si le paquet est installé, à
-  jour, ou si une nouvelle release existe. Tu peux ajouter tes propres dépôts et masquer
-  ceux du catalogue ; tes choix sont gardés à part et survivent aux mises à jour.
-- **Mes paquets** — la liste de ce que Debload a installé, avec un bouton de
-  désinstallation par ligne, et une option de purge des fichiers de configuration.
+  (`/usr/lib/Debload/repos.json`). Chaque ligne dit ce qu'elle est : pas installée,
+  à jour, ou une nouvelle release disponible. Et elle propose le geste qui va avec —
+  « Installer », « Mettre à jour », ou « Désinstaller » quand il n'y a plus rien à
+  poser. Tout se passe là : c'est le même objet dont on parle, il n'a pas à être
+  décrit à deux endroits. Tu peux ajouter tes propres dépôts, et retirer de la liste
+  ceux que tu as ajoutés ; tes choix sont gardés à part et survivent aux mises à jour.
 
 Un paquet venu du catalogue s'installe d'un seul clic : tu l'as déjà choisi en
 l'ajoutant, Debload ne te le redemande pas. Clique sur plusieurs lignes et elles
@@ -41,12 +42,26 @@ l'installeur que ce fichier porte en lui :
 - **Linux sans dpkg** — une AppImage est posée dans `~/.local/bin` et rendue
   exécutable ; un `.rpm` passe par dnf, zypper ou rpm, selon ce qui est là.
 
-Sous Windows, l'onglet « Mes applications » remplace « Mes paquets » : il n'y a pas
-d'historique à tenir — Debload n'a rien posé lui-même — alors tout se relit dans la
-base de registre. Il n'y montre que les applications de son catalogue, et les
-désinstalle par la ligne que leur installeur y a laissée : la silencieuse quand le
-fabricant en fournit une, sinon celle qu'on reconnaît à sa signature. Pour tout le
-reste, le panneau de configuration de Windows est là et fait mieux.
+## Savoir ce qui est déjà là
+
+Une ligne ne peut proposer « Désinstaller » que si elle sait ce qui est installé, et
+les quatre systèmes ne répondent pas de la même source :
+
+- **Debian** — dpkg fait autorité, par le nom de paquet appris à la première
+  installation. Debload ne retire que ce qu'il a posé, et jamais un paquet que dpkg
+  déclare essentiel.
+- **Windows** — la base de registre fait autorité : il n'y a pas d'historique à tenir,
+  Debload n'a rien posé lui-même. Il rapproche l'application du dépôt par le nom
+  affiché, et la retire par la ligne que son installeur a laissée — la silencieuse
+  quand le fabricant en fournit une. Une application qui n'en a laissé aucune ne se
+  retire pas d'ici ; le panneau de configuration de Windows est là et fait mieux.
+- **macOS et Linux sans dpkg** — personne ne tient de liste, mais c'est Debload qui a
+  posé le fichier : il note ce qu'il a fait, et le vérifie avant d'y croire. Une
+  AppImage effacée à la main redevient « pas installée ». La retirer, c'est effacer ce
+  qui avait été posé — ou, pour un `.rpm`, le rendre à dnf, zypper ou rpm.
+
+Dans tous les cas, Debload ne se mêle que de son catalogue, et un bouton grisé dit
+pourquoi il l'est.
 
 Sur macOS et sur les distributions sans dpkg, personne ne tient cette liste : Debload
 installe, mais ne suit ni ne désinstalle. Une archive qu'il ne sait pas déplier reste

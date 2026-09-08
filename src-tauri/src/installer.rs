@@ -48,6 +48,24 @@ pub enum Family {
     Unsupported,
 }
 
+/// Ce que l'installation a laissé derrière elle.
+///
+/// La distinction n'a rien de cosmétique : `System` veut dire que dpkg ou la
+/// base de registre en gardent la trace, donc que Debload n'a rien à noter.
+/// Les trois autres, personne ne les inscrit nulle part — c'est Debload qui
+/// s'en souvient, et c'est cette valeur qu'il inscrit dans son registre.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Placed {
+    /// Le système tient la trace lui-même : rien à retenir.
+    System,
+    /// Le fichier posé dans `~/.local/bin`.
+    AppImage(PathBuf),
+    /// Le `.app` copié dans « Applications ».
+    AppBundle(PathBuf),
+    /// Le nom du paquet, tel que le fichier le déclare.
+    Rpm(String),
+}
+
 /// Reconnaît un exécutable Windows à sa signature.
 ///
 /// Les deux assistants inscrivent leur nom dans le fichier : NSIS son en-tête
@@ -274,27 +292,16 @@ pub fn uninstall(
 /// Trois familles se partagent le monde RPM et ne s'appellent pas pareil ;
 /// `rpm` lui-même sert de dernier recours, sans résolution de dépendances.
 fn rpm_command(runner: &dyn CommandRunner, file: &str) -> Option<(String, Vec<String>)> {
-    let available = |program: &str| {
-        runner
-            .run(program, &["--version"])
-            .map(|out| out.success())
-            .unwrap_or(false)
-    };
-
-    let args: Vec<String> = if available("dnf") {
-        vec!["dnf", "install", "-y", file]
-    } else if available("zypper") {
-        vec![
+    let args: Vec<String> = match rpm_manager(runner)? {
+        "dnf" => vec!["dnf", "install", "-y", file],
+        "zypper" => vec![
             "zypper",
             "--non-interactive",
             "install",
             "--allow-unsigned-rpm",
             file,
-        ]
-    } else if available("rpm") {
-        vec!["rpm", "-Uvh", file]
-    } else {
-        return None;
+        ],
+        _ => vec!["rpm", "-Uvh", file],
     }
     .into_iter()
     .map(str::to_string)
@@ -302,6 +309,19 @@ fn rpm_command(runner: &dyn CommandRunner, file: &str) -> Option<(String, Vec<St
 
     // pkexec ouvre l'invite du système : c'est le même geste que sur Debian.
     Some(("pkexec".to_string(), args))
+}
+
+/// Celui des trois qui répond sur cette machine, dans l'ordre où on les
+/// préfère : dnf et zypper résolvent les dépendances, `rpm` non.
+fn rpm_manager(runner: &dyn CommandRunner) -> Option<&'static str> {
+    let available = |program: &str| {
+        runner
+            .run(program, &["--version"])
+            .map(|out| out.success())
+            .unwrap_or(false)
+    };
+
+    ["dnf", "zypper", "rpm"].into_iter().find(|p| available(p))
 }
 
 /// Pose une AppImage à demeure et la rend exécutable.
@@ -358,7 +378,7 @@ fn install_dmg(
     runner: &dyn CommandRunner,
     path: &Path,
     applications: &Path,
-) -> Result<(), DebloadError> {
+) -> Result<PathBuf, DebloadError> {
     let file = path.display().to_string();
     let out = runner.run("hdiutil", &["attach", "-nobrowse", "-readonly", &file])?;
     if !out.success() {
@@ -373,12 +393,12 @@ fn install_dmg(
     result
 }
 
-/// Copie l'application trouvée sur le volume monté.
+/// Copie l'application trouvée sur le volume monté, et dit où elle a atterri.
 fn copy_app(
     runner: &dyn CommandRunner,
     mount: &str,
     applications: &Path,
-) -> Result<(), DebloadError> {
+) -> Result<PathBuf, DebloadError> {
     let app = std::fs::read_dir(mount)
         .map_err(|e| DebloadError::Io(e.to_string()))?
         .filter_map(Result::ok)
@@ -392,11 +412,16 @@ fn copy_app(
     let destination = applications.display().to_string();
     let out = runner.run("cp", &["-R", &source, &destination])?;
 
-    if out.success() {
-        Ok(())
-    } else {
-        Err(classify_failure(out.status, &out.stderr))
+    if !out.success() {
+        return Err(classify_failure(out.status, &out.stderr));
     }
+
+    // `cp -R Foo.app /Applications` dépose `/Applications/Foo.app` : c'est ce
+    // chemin-là qu'il faudra effacer pour désinstaller.
+    let name = app
+        .file_name()
+        .ok_or_else(|| DebloadError::CommandFailed("application sans nom".to_string()))?;
+    Ok(applications.join(name))
 }
 
 /// Ce dont l'installation a besoin en plus du fichier : les dossiers du
@@ -416,7 +441,7 @@ pub fn install(
     platform: Platform,
     places: &Places,
     on_line: &dyn Fn(&str, &str),
-) -> Result<(), DebloadError> {
+) -> Result<Placed, DebloadError> {
     if !path.is_file() {
         return Err(DebloadError::FileNotFound(path.display().to_string()));
     }
@@ -425,11 +450,11 @@ pub fn install(
     let family = family(path, &head, platform);
 
     match family {
-        Family::AppImage => {
-            place_appimage(path, &places.home)?;
-            return Ok(());
+        Family::AppImage => return Ok(Placed::AppImage(place_appimage(path, &places.home)?)),
+        Family::Dmg => {
+            let bundle = install_dmg(runner, path, &places.applications)?;
+            return Ok(Placed::AppBundle(bundle));
         }
-        Family::Dmg => return install_dmg(runner, path, &places.applications),
         Family::Unsupported => {
             return Err(DebloadError::NotInstallable(file_name(path)));
         }
@@ -446,7 +471,98 @@ pub fn install(
     let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
     let elevate = platform == Platform::Windows;
 
-    run_and_check(runner, &program, &borrowed, elevate, on_line)
+    run_and_check(runner, &program, &borrowed, elevate, on_line)?;
+
+    // Le nom du paquet se lit dans le fichier, et lui seul permettra plus tard
+    // d'interroger rpm ou de lui demander de le retirer. Un fichier qui refuse
+    // de le dire s'installe quand même : il ne se suivra simplement pas.
+    Ok(match family {
+        Family::Rpm => match rpm_package_name(runner, &file) {
+            Some(name) => Placed::Rpm(name),
+            None => Placed::System,
+        },
+        _ => Placed::System,
+    })
+}
+
+/// Nom du paquet que porte un fichier `.rpm`.
+fn rpm_package_name(runner: &dyn CommandRunner, file: &str) -> Option<String> {
+    let out = runner
+        .run("rpm", &["-qp", "--queryformat", "%{NAME}", file])
+        .ok()?;
+
+    out.success()
+        .then(|| out.stdout.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
+/// Retire ce que Debload avait posé de ses mains.
+///
+/// Poser une AppImage, c'était copier un fichier ; la retirer, c'est l'effacer.
+/// Un `.app` est un dossier, et s'efface avec ce qu'il contient. Un paquet
+/// rpm, lui, retourne à son gestionnaire.
+pub fn remove_placed(
+    runner: &dyn CommandRunner,
+    placed: &Placed,
+    on_line: &dyn Fn(&str, &str),
+) -> Result<(), DebloadError> {
+    let io = |e: std::io::Error| DebloadError::Io(e.to_string());
+
+    match placed {
+        // Rien de posé à la main : il n'y a rien à défaire ici.
+        Placed::System => Ok(()),
+
+        Placed::AppImage(path) => match std::fs::remove_file(path) {
+            // Déjà effacé ailleurs : le résultat voulu est atteint.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other.map_err(io),
+        },
+
+        Placed::AppBundle(path) => match std::fs::remove_dir_all(path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other.map_err(io),
+        },
+
+        Placed::Rpm(name) => {
+            let (program, args) = rpm_removal_command(runner, name)
+                .ok_or_else(|| DebloadError::NotInstallable(name.clone()))?;
+            let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+            run_and_check(runner, &program, &borrowed, false, on_line)
+        }
+    }
+}
+
+/// Vrai si ce que Debload avait posé est toujours là.
+///
+/// Un fichier effacé à la main ne doit pas rester « installé » dans le
+/// catalogue : le registre de Debload dit ce qu'il a fait, le disque dit ce
+/// qu'il en reste, et c'est le disque qui tranche.
+pub fn still_placed(runner: &dyn CommandRunner, placed: &Placed) -> bool {
+    match placed {
+        Placed::System => true,
+        Placed::AppImage(path) => path.is_file(),
+        Placed::AppBundle(path) => path.exists(),
+        Placed::Rpm(name) => runner
+            .run("rpm", &["-q", name])
+            .map(|out| out.success())
+            .unwrap_or(false),
+    }
+}
+
+/// Le gestionnaire RPM de la machine, du côté de la suppression.
+///
+/// Même ordre de préférence qu'à l'installation : dnf, zypper, puis `rpm` seul.
+fn rpm_removal_command(runner: &dyn CommandRunner, name: &str) -> Option<(String, Vec<String>)> {
+    let args: Vec<String> = match rpm_manager(runner)? {
+        "dnf" => vec!["dnf", "remove", "-y", name],
+        "zypper" => vec!["zypper", "--non-interactive", "remove", name],
+        _ => vec!["rpm", "-e", name],
+    }
+    .into_iter()
+    .map(str::to_string)
+    .collect();
+
+    Some(("pkexec".to_string(), args))
 }
 
 /// Lance une commande et juge son issue.
@@ -907,8 +1023,9 @@ mod tests {
         fake.on(&["dnf", "--version"], CommandOutput::fail(1, "absent"));
         fake.on(&["zypper", "--version"], CommandOutput::ok("1.14"));
         fake.on(&["pkexec"], CommandOutput::ok(""));
+        fake.on(&["rpm", "-qp"], CommandOutput::ok("app\n"));
 
-        install(
+        let placed = install(
             &fake,
             &rpm,
             Platform::LinuxOther,
@@ -917,8 +1034,95 @@ mod tests {
         )
         .unwrap();
 
+        // Le nom du paquet se lit dans le fichier : sans lui, rien ne
+        // permettrait plus tard de demander à rpm de le retirer.
+        assert_eq!(placed, Placed::Rpm("app".to_string()));
+
+        let installed = fake
+            .calls()
+            .into_iter()
+            .find(|call| call[0] == "pkexec")
+            .unwrap();
+        assert!(installed.contains(&"zypper".to_string()));
+    }
+
+    #[test]
+    fn an_rpm_that_will_not_say_its_name_installs_all_the_same() {
+        let dir = tempfile::tempdir().unwrap();
+        let rpm = dir.path().join("app.rpm");
+        std::fs::write(&rpm, b"rpm").unwrap();
+
+        let fake = FakeRunner::new();
+        fake.on(&["dnf", "--version"], CommandOutput::ok("5.0"));
+        fake.on(&["pkexec"], CommandOutput::ok(""));
+        fake.on(&["rpm", "-qp"], CommandOutput::fail(1, "illisible"));
+
+        // Il s'installe, mais rien ne le suivra : la ligne du catalogue ne
+        // saura pas qu'il est là, ce qui vaut mieux qu'un nom inventé.
+        let placed = install(
+            &fake,
+            &rpm,
+            Platform::LinuxOther,
+            &places(dir.path()),
+            &|_, _| {},
+        )
+        .unwrap();
+        assert_eq!(placed, Placed::System);
+    }
+
+    #[test]
+    fn an_appimage_is_removed_by_erasing_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("App.AppImage");
+        std::fs::write(&file, b"x").unwrap();
+
+        let fake = FakeRunner::new();
+        let placed = Placed::AppImage(file.clone());
+        assert!(still_placed(&fake, &placed));
+
+        remove_placed(&fake, &placed, &|_, _| {}).unwrap();
+        assert!(!file.exists());
+        assert!(!still_placed(&fake, &placed));
+
+        // Effacée deux fois, ou effacée à la main entre-temps : le résultat
+        // voulu est atteint, il n'y a rien à signaler.
+        remove_placed(&fake, &placed, &|_, _| {}).unwrap();
+    }
+
+    #[test]
+    fn an_application_bundle_is_removed_with_what_it_contains() {
+        let dir = tempfile::tempdir().unwrap();
+        let bundle = dir.path().join("App.app");
+        std::fs::create_dir_all(bundle.join("Contents")).unwrap();
+        std::fs::write(bundle.join("Contents").join("Info.plist"), b"x").unwrap();
+
+        let fake = FakeRunner::new();
+        let placed = Placed::AppBundle(bundle.clone());
+        assert!(still_placed(&fake, &placed));
+
+        remove_placed(&fake, &placed, &|_, _| {}).unwrap();
+        assert!(!bundle.exists());
+    }
+
+    #[test]
+    fn an_rpm_is_handed_back_to_its_package_manager() {
+        let fake = FakeRunner::new();
+        fake.on(&["dnf", "--version"], CommandOutput::fail(1, "absent"));
+        fake.on(&["zypper", "--version"], CommandOutput::fail(1, "absent"));
+        fake.on(&["rpm", "--version"], CommandOutput::ok("4.19"));
+        fake.on(&["pkexec"], CommandOutput::ok(""));
+
+        remove_placed(&fake, &Placed::Rpm("app".to_string()), &|_, _| {}).unwrap();
+
         let call = fake.calls().into_iter().last().unwrap();
         assert_eq!(call[0], "pkexec");
-        assert!(call.contains(&"zypper".to_string()));
+        assert_eq!(&call[1..], ["rpm", "-e", "app"]);
+    }
+
+    #[test]
+    fn a_package_rpm_no_longer_knows_is_no_longer_installed() {
+        let fake = FakeRunner::new();
+        fake.on(&["rpm", "-q"], CommandOutput::fail(1, "not installed"));
+        assert!(!still_placed(&fake, &Placed::Rpm("app".to_string())));
     }
 }

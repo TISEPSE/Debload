@@ -56,6 +56,41 @@ pub struct Catalog {
     pub entries: Vec<CatalogEntry>,
 }
 
+/// Par quel moyen Debload a posé une application, là où le système ne tient
+/// pas de registre.
+///
+/// C'est ce qui décide de la façon de la retrouver plus tard, et de celle de
+/// la retirer : un fichier à effacer, un dossier à effacer, ou un paquet à
+/// confier au gestionnaire de la distribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InstalledKind {
+    /// Un fichier unique posé dans `~/.local/bin`.
+    AppImage,
+    /// Un `.app` copié dans « Applications ».
+    AppBundle,
+    /// Un paquet confié à dnf, zypper ou rpm.
+    Rpm,
+}
+
+/// Ce que Debload a posé lui-même, là où rien ne le dit à sa place.
+///
+/// Debian a dpkg, Windows a sa base de registre : sur ces deux systèmes on ne
+/// note rien, on interroge. Ailleurs, une AppImage posée dans `~/.local/bin`
+/// ou un `.app` copié dans « Applications » ne laissent aucune trace
+/// consultable — sauf celle qu'on écrit ici, au moment de la poser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstallRecord {
+    pub slug: String,
+    /// Version de la release installée. C'est elle qu'on compare à la
+    /// dernière publiée pour savoir s'il y a une mise à jour.
+    pub version: String,
+    pub kind: InstalledKind,
+    /// Chemin du fichier ou du dossier posé ; pour un rpm, le nom du paquet.
+    pub target: String,
+}
+
 /// Ce que l'utilisateur a changé au catalogue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -72,6 +107,10 @@ pub struct UserRepos {
     /// permet de le deviner avant d'avoir installé une première fois.
     #[serde(default)]
     pub packages: Vec<(String, String)>,
+    /// Ce que Debload a posé de ses mains, là où le système n'en garde pas
+    /// trace. Vide sur Debian et sous Windows, qui savent répondre seuls.
+    #[serde(default)]
+    pub installs: Vec<InstallRecord>,
 }
 
 impl Default for UserRepos {
@@ -81,6 +120,7 @@ impl Default for UserRepos {
             added: Vec::new(),
             hidden: Vec::new(),
             packages: Vec::new(),
+            installs: Vec::new(),
         }
     }
 }
@@ -98,6 +138,23 @@ impl UserRepos {
             Some(entry) => entry.1 = package.to_string(),
             None => self.packages.push((slug.to_string(), package.to_string())),
         }
+    }
+
+    pub fn install_for(&self, slug: &str) -> Option<&InstallRecord> {
+        self.installs.iter().find(|r| r.slug == slug)
+    }
+
+    /// Note ce qui vient d'être posé, en remplaçant ce qu'on savait du dépôt :
+    /// une mise à jour installe par-dessus, elle n'ajoute pas une ligne.
+    pub fn remember_install(&mut self, record: InstallRecord) {
+        match self.installs.iter_mut().find(|r| r.slug == record.slug) {
+            Some(existing) => *existing = record,
+            None => self.installs.push(record),
+        }
+    }
+
+    pub fn forget_install(&mut self, slug: &str) {
+        self.installs.retain(|r| r.slug != slug);
     }
 
     pub fn hide(&mut self, slug: &str) {
@@ -164,6 +221,27 @@ pub fn effective(catalog: &Catalog, user: &UserRepos) -> Vec<CatalogEntry> {
     }
 
     entries
+}
+
+/// Les noms sous lesquels un dépôt peut se présenter au système.
+///
+/// Hors Debian, il n'y a pas de nom de paquet : une application ne se retrouve
+/// que par le nom qu'elle affiche. Le libellé du catalogue et le nom du dépôt
+/// sont les deux candidats, et il faut les essayer tous les deux — « Heroic
+/// Games Launcher » ne ressemble au dépôt `HeroicGamesLauncher` qu'une fois
+/// normalisé, mais un libellé traduit, lui, ne lui ressemble pas du tout.
+pub fn display_names(catalog: &Catalog, user: &UserRepos, slug: &str) -> Vec<String> {
+    let repo = slug.rsplit('/').next().unwrap_or(slug).to_string();
+
+    let label = effective(catalog, user)
+        .into_iter()
+        .find(|entry| entry.slug() == slug)
+        .and_then(|entry| entry.label);
+
+    match label {
+        Some(label) if label != repo => vec![label, repo],
+        _ => vec![repo],
+    }
 }
 
 /// Chemin du catalogue livré.
@@ -288,6 +366,71 @@ mod tests {
     }
 
     #[test]
+    fn remembers_what_it_placed_where_nothing_else_would() {
+        let mut user = UserRepos::default();
+        assert_eq!(user.install_for("TISEPSE/MailFlow"), None);
+
+        user.remember_install(InstallRecord {
+            slug: "TISEPSE/MailFlow".into(),
+            version: "0.1.8".into(),
+            kind: InstalledKind::AppImage,
+            target: "/home/x/.local/bin/MailFlow.AppImage".into(),
+        });
+        assert_eq!(
+            user.install_for("TISEPSE/MailFlow")
+                .map(|r| r.version.as_str()),
+            Some("0.1.8")
+        );
+
+        // Une mise à jour s'installe par-dessus : une ligne, pas deux.
+        user.remember_install(InstallRecord {
+            slug: "TISEPSE/MailFlow".into(),
+            version: "0.2.0".into(),
+            kind: InstalledKind::AppImage,
+            target: "/home/x/.local/bin/MailFlow.AppImage".into(),
+        });
+        assert_eq!(user.installs.len(), 1);
+        assert_eq!(
+            user.install_for("TISEPSE/MailFlow")
+                .map(|r| r.version.as_str()),
+            Some("0.2.0")
+        );
+
+        user.forget_install("TISEPSE/MailFlow");
+        assert!(user.installs.is_empty());
+    }
+
+    #[test]
+    fn a_repo_is_looked_up_under_its_label_and_its_own_name() {
+        let user = UserRepos::default();
+        // Le libellé du catalogue vaut « MailFlow », comme le dépôt : un seul
+        // nom à essayer.
+        assert_eq!(
+            display_names(&catalog(), &user, "TISEPSE/MailFlow"),
+            vec!["MailFlow"]
+        );
+
+        let labelled = Catalog {
+            entries: vec![CatalogEntry {
+                owner: "Heroic".into(),
+                repo: "HeroicGamesLauncher".into(),
+                label: Some("Heroic Games Launcher".into()),
+                description: None,
+            }],
+        };
+        assert_eq!(
+            display_names(&labelled, &user, "Heroic/HeroicGamesLauncher"),
+            vec!["Heroic Games Launcher", "HeroicGamesLauncher"]
+        );
+
+        // Un dépôt que le catalogue ne connaît pas garde son propre nom.
+        assert_eq!(
+            display_names(&catalog(), &user, "microsoft/vscode"),
+            vec!["vscode"]
+        );
+    }
+
+    #[test]
     fn user_choices_survive_a_save_and_reload() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("repos.json");
@@ -296,12 +439,22 @@ mod tests {
         user.add(entry("microsoft", "vscode"));
         user.hide("TISEPSE/Nexus");
         user.remember_package("TISEPSE/MailFlow", "mail-flow");
+        user.remember_install(InstallRecord {
+            slug: "microsoft/vscode".into(),
+            version: "1.104.2".into(),
+            kind: InstalledKind::AppBundle,
+            target: "/Applications/Visual Studio Code.app".into(),
+        });
         save_user(&path, &user).unwrap();
 
         let reloaded = load_user(&path);
         assert_eq!(reloaded.added.len(), 1);
         assert_eq!(reloaded.hidden, vec!["TISEPSE/Nexus"]);
         assert_eq!(reloaded.package_for("TISEPSE/MailFlow"), Some("mail-flow"));
+        assert_eq!(
+            reloaded.install_for("microsoft/vscode").map(|r| r.kind),
+            Some(InstalledKind::AppBundle)
+        );
     }
 
     #[test]

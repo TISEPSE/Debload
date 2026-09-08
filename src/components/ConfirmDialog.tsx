@@ -4,8 +4,9 @@ interface ConfirmDialogProps {
   packageName: string;
   /**
    * Vrai là où apt sait aussi retirer les fichiers de configuration. Ailleurs,
-   * c'est le désinstalleur de l'application qui décide de ce qu'il laisse : il
-   * n'y a rien à cocher.
+   * c'est le désinstalleur de l'application — ou l'effacement de ce que
+   * Debload avait posé — qui décide de ce qu'il laisse : il n'y a rien à
+   * cocher.
    */
   purgeable: boolean;
   onConfirm: (purge: boolean) => void;
@@ -27,7 +28,7 @@ export function ConfirmDialog({
         <p className="dialog__body">
           {purgeable
             ? "Le paquet sera retiré du système. Ubuntu demandera ton mot de passe."
-            : "L'application sera retirée par son propre désinstalleur. Windows peut demander une confirmation."}
+            : "L'application sera retirée du système. Il peut t'être demandé de confirmer."}
         </p>
 
         {purgeable && (

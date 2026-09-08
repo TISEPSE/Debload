@@ -15,7 +15,7 @@ use crate::privileged::PrivilegedApt;
 use crate::progress::ProgressEvent;
 use crate::release_cache;
 use crate::repo_ops::{self, RepoRelease, RepoRow};
-use crate::repos::{self, CatalogEntry};
+use crate::repos;
 use crate::runner::CommandRunner;
 use crate::settings::{self, Platform, Settings};
 use crate::win_apps::{self, InstalledApp};
@@ -70,20 +70,6 @@ pub enum OutputEvent {
     Progress(ProgressEvent),
     /// Sortie textuelle ordinaire, conservée pour le diagnostic d'un échec.
     Log { stream: String, line: String },
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ManagedPackage {
-    pub name: String,
-    /// Version réellement installée sur le système.
-    pub version: String,
-    pub architecture: String,
-    pub source_file: String,
-    pub installed_at: String,
-    pub summary: String,
-    /// Faux pour un paquet essentiel : le bouton de désinstallation est alors inactif.
-    pub removable: bool,
 }
 
 /// Horodatage local au format RFC 3339.
@@ -166,16 +152,18 @@ pub fn install(
 ///
 /// C'est le pendant d'`install` là où apt n'existe pas. La différence n'est
 /// pas que technique : apt rend un nom, une version et un code de sortie,
-/// alors qu'un installeur Windows ne rend qu'un code. Il n'y a donc rien à
-/// inscrire dans l'historique — ce que le système a posé, Debload le relit
-/// dans le système.
+/// alors qu'un installeur Windows ne rend qu'un code.
+///
+/// Ce que le système inscrit lui-même, Debload le relit dans le système et
+/// n'en garde rien. Ce que personne n'inscrit — une AppImage posée, un `.app`
+/// copié —, il le note : c'est `Placed` qui fait la différence.
 pub fn install_natively(
     runner: &dyn CommandRunner,
     path: &str,
     platform: Platform,
     places: &Places,
     sink: &dyn Fn(OutputEvent),
-) -> Result<(), DebloadError> {
+) -> Result<installer::Placed, DebloadError> {
     let on_line = |stream: &str, line: &str| {
         sink(OutputEvent::Log {
             stream: stream.to_string(),
@@ -183,11 +171,11 @@ pub fn install_natively(
         });
     };
 
-    installer::install(runner, Path::new(path), platform, places, &on_line)?;
+    let placed = installer::install(runner, Path::new(path), platform, places, &on_line)?;
 
     // Ce qui vient d'être posé doit apparaître au prochain écran.
     win_apps::forget();
-    Ok(())
+    Ok(placed)
 }
 
 /// La photographie du registre dont une commande a besoin.
@@ -202,73 +190,31 @@ fn registry_snapshot(runner: &dyn CommandRunner, platform: Platform) -> Vec<Inst
     }
 }
 
-/// Les applications du catalogue que Windows déclare installées.
+/// L'application Windows que ce dépôt du catalogue a posée, si elle est là.
 ///
-/// C'est la limite que Debload se donne : il ne montre, et ne propose de
-/// retirer, que ce qu'il aurait su installer lui-même. Pour tout le reste, le
-/// panneau de configuration de Windows est là et fait mieux.
-fn catalogued_apps(
+/// C'est la limite que Debload se donne : il ne propose de retirer que ce
+/// qu'il aurait su installer lui-même. Un dépôt hors catalogue ne donne rien,
+/// même si une application de ce nom traîne dans le registre — pour tout le
+/// reste, le panneau de configuration de Windows est là et fait mieux.
+fn catalogued_app(
     catalog_path: &Path,
     repos_path: &Path,
     apps: &[InstalledApp],
-) -> Vec<(CatalogEntry, InstalledApp)> {
+    slug: &str,
+) -> Option<InstalledApp> {
     let catalog = repos::load_catalog(catalog_path);
     let user = repos::load_user(repos_path);
 
-    repos::effective(&catalog, &user)
-        .into_iter()
-        .filter_map(|entry| {
-            let label = entry.label.clone().unwrap_or_else(|| entry.repo.clone());
-            let names = [label.as_str(), entry.repo.as_str()];
-            let found = win_apps::find(apps, &names)?.clone();
-            Some((entry, found))
-        })
-        .collect()
-}
-
-/// Convertit la date compacte de Windows en date que l'interface sait lire.
-///
-/// Le registre écrit `20260903` ; tout ce qui ne suit pas cette forme est
-/// rendu tel quel, faute de savoir ce que c'est.
-fn readable_date(compact: &str) -> String {
-    let digits = compact.len() == 8 && compact.chars().all(|c| c.is_ascii_digit());
-    if digits {
-        format!("{}-{}-{}", &compact[0..4], &compact[4..6], &compact[6..8])
-    } else {
-        compact.to_string()
+    let known = repos::effective(&catalog, &user)
+        .iter()
+        .any(|entry| entry.slug() == slug);
+    if !known {
+        return None;
     }
-}
 
-/// Ce que Debload retrouve, sur Windows, des applications de son catalogue.
-///
-/// L'inventaire ne vient pas d'un historique à lui : il n'a rien installé
-/// lui-même, c'est l'installeur du système qui a travaillé. Tout se relit donc
-/// dans la base de registre, à chaque fois.
-pub fn list_windows(
-    catalog_path: &Path,
-    repos_path: &Path,
-    apps: &[InstalledApp],
-) -> Vec<ManagedPackage> {
-    catalogued_apps(catalog_path, repos_path, apps)
-        .into_iter()
-        .map(|(entry, app)| ManagedPackage {
-            name: app.name,
-            version: app.version.unwrap_or_default(),
-            // Windows ne déclare ni l'architecture ni le fichier d'origine :
-            // l'interface n'en montre pas, et Debload n'en invente pas.
-            architecture: String::new(),
-            source_file: String::new(),
-            installed_at: app
-                .installed_on
-                .as_deref()
-                .map(readable_date)
-                .unwrap_or_default(),
-            summary: entry.description.unwrap_or_default(),
-            // Une application sans ligne de désinstallation existe : elle ne
-            // se retire simplement pas d'ici.
-            removable: app.uninstall.is_some() || app.quiet_uninstall.is_some(),
-        })
-        .collect()
+    let names = repos::display_names(&catalog, &user, slug);
+    let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
+    win_apps::find(apps, &borrowed).cloned()
 }
 
 /// Retire une application Windows par la ligne qu'elle a laissée au registre.
@@ -277,15 +223,13 @@ pub fn remove_windows_app(
     catalog_path: &Path,
     repos_path: &Path,
     apps: &[InstalledApp],
-    name: &str,
+    slug: &str,
     sink: &dyn Fn(OutputEvent),
 ) -> Result<OperationResult, DebloadError> {
-    let (_, app) = catalogued_apps(catalog_path, repos_path, apps)
-        .into_iter()
-        .find(|(_, app)| app.name == name)
+    let app = catalogued_app(catalog_path, repos_path, apps, slug)
         // Hors catalogue, Debload ne se mêle de rien : c'est la même règle que
         // sur Debian, où il ne désinstalle que ce qu'il a installé.
-        .ok_or_else(|| DebloadError::NotManaged(name.to_string()))?;
+        .ok_or_else(|| DebloadError::NotManaged(slug.to_string()))?;
 
     let (raw, quiet) = app
         .removal()
@@ -307,50 +251,6 @@ pub fn remove_windows_app(
         version: app.version.clone().unwrap_or_default(),
         launchable: false,
     })
-}
-
-/// Liste les paquets gérés par Debload, après réconciliation avec dpkg.
-///
-/// Une entrée dont le paquet a été supprimé en dehors de Debload est retirée
-/// de l'historique : celui-ci décrit ce que l'application gère à cet instant,
-/// pas un journal des opérations passées.
-pub fn list(
-    runner: &dyn CommandRunner,
-    history_path: &Path,
-) -> Result<Vec<ManagedPackage>, DebloadError> {
-    let mut hist = history::load(history_path);
-    let entries = hist.entries.clone();
-
-    let mut packages = Vec::new();
-    let mut reconciled = false;
-
-    for entry in entries {
-        let state = query_installed(runner, &entry.name)?;
-        if !state.installed {
-            hist.remove(&entry.name);
-            reconciled = true;
-            continue;
-        }
-
-        // En cas de doute sur le statut protégé, on protège.
-        let protected = is_protected(runner, &entry.name).unwrap_or(true);
-
-        packages.push(ManagedPackage {
-            name: entry.name.clone(),
-            version: state.version.unwrap_or(entry.version),
-            architecture: state.architecture.unwrap_or(entry.architecture),
-            source_file: entry.source_file,
-            installed_at: entry.installed_at,
-            summary: entry.summary,
-            removable: !protected,
-        });
-    }
-
-    if reconciled {
-        history::save(history_path, &hist)?;
-    }
-
-    Ok(packages)
 }
 
 /// Désinstalle un paquet précédemment installé par Debload.
@@ -445,37 +345,92 @@ pub fn launch_app(name: String, state: State<'_, AppState>) -> Result<(), Debloa
     launch::launch(state.runner.as_ref(), &name)
 }
 
-/// L'inventaire, d'où qu'il vienne.
+/// Retire ce qu'un dépôt du catalogue a installé.
 ///
-/// Sur Debian, l'historique de Debload confronté à dpkg. Sous Windows, le
-/// catalogue confronté à la base de registre — il n'y a pas d'historique, rien
-/// n'ayant été posé par Debload lui-même.
-#[tauri::command]
-pub fn list_managed(state: State<'_, AppState>) -> Result<Vec<ManagedPackage>, DebloadError> {
-    let runner = state.runner.as_ref();
-    let platform = settings::load(&state.settings_path).platform_or_detected();
-
+/// L'interface ne connaît que le dépôt : c'est ici qu'on retrouve ce qu'il a
+/// laissé sur cette machine-là, et par quel chemin le défaire. Chaque système
+/// répond à sa manière, mais la ligne du catalogue, elle, n'a qu'un bouton.
+///
+/// `purge` ne veut dire quelque chose que sur Debian, où apt sait aussi
+/// effacer les fichiers de configuration. Partout ailleurs, c'est le
+/// désinstalleur de l'application qui décide de ce qu'il laisse derrière lui.
+#[allow(clippy::too_many_arguments)]
+pub fn remove_repo_install(
+    runner: &dyn CommandRunner,
+    apt: &dyn PrivilegedApt,
+    paths: &RemovalPaths,
+    platform: Platform,
+    apps: &[InstalledApp],
+    slug: &str,
+    purge: bool,
+    sink: &dyn Fn(OutputEvent),
+) -> Result<OperationResult, DebloadError> {
     if platform == Platform::Windows {
-        let apps = win_apps::cached_list(runner);
-        return Ok(list_windows(&state.catalog_path, &state.repos_path, &apps));
+        return remove_windows_app(runner, &paths.catalog, &paths.repos, apps, slug, sink);
     }
 
-    list(runner, &state.history_path)
+    if platform == Platform::Debian {
+        let user = repos::load_user(&paths.repos);
+        let package = user
+            .package_for(slug)
+            // Sans paquet connu, Debload n'a jamais rien installé pour ce
+            // dépôt : il n'a rien à retirer.
+            .ok_or_else(|| DebloadError::NotManaged(slug.to_string()))?;
+
+        return remove_package(runner, apt, &paths.history, package, purge, sink);
+    }
+
+    // Reste ce que Debload a posé de ses mains, et dont lui seul garde trace.
+    let mut user = repos::load_user(&paths.repos);
+    let record = user
+        .install_for(slug)
+        .cloned()
+        .ok_or_else(|| DebloadError::NotManaged(slug.to_string()))?;
+
+    let on_line = |stream: &str, line: &str| {
+        sink(OutputEvent::Log {
+            stream: stream.to_string(),
+            line: line.to_string(),
+        });
+    };
+    installer::remove_placed(runner, &repo_ops::placed_of(&record), &on_line)?;
+
+    user.forget_install(slug);
+    repos::save_user(&paths.repos, &user)?;
+
+    Ok(OperationResult {
+        package: record.target,
+        version: record.version,
+        launchable: false,
+    })
+}
+
+/// Les trois fichiers où Debload garde ce qu'il sait d'une installation.
+///
+/// Ils voyagent ensemble : la désinstallation les consulte tous les trois
+/// selon le système, et les passer un par un allongeait la liste sans rien
+/// éclairer.
+pub struct RemovalPaths {
+    pub catalog: PathBuf,
+    pub repos: PathBuf,
+    pub history: PathBuf,
 }
 
 #[tauri::command]
-pub async fn uninstall(
-    name: String,
+pub async fn uninstall_repo(
+    slug: String,
     purge: bool,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<OperationResult, DebloadError> {
     let runner = state.runner.clone();
     let apt = state.apt.clone();
-    let history_path = state.history_path.clone();
     let settings_path = state.settings_path.clone();
-    let catalog_path = state.catalog_path.clone();
-    let repos_path = state.repos_path.clone();
+    let paths = RemovalPaths {
+        catalog: state.catalog_path.clone(),
+        repos: state.repos_path.clone(),
+        history: state.history_path.clone(),
+    };
 
     tauri::async_runtime::spawn_blocking(move || {
         let emit = |event: OutputEvent| match event {
@@ -488,25 +443,15 @@ pub async fn uninstall(
         };
 
         let platform = settings::load(&settings_path).platform_or_detected();
-        if platform == Platform::Windows {
-            // `purge` n'a pas d'équivalent : c'est le désinstalleur de
-            // l'application qui décide de ce qu'il laisse derrière lui.
-            let apps = registry_snapshot(runner.as_ref(), platform);
-            return remove_windows_app(
-                runner.as_ref(),
-                &catalog_path,
-                &repos_path,
-                &apps,
-                &name,
-                &emit,
-            );
-        }
+        let apps = registry_snapshot(runner.as_ref(), platform);
 
-        remove_package(
+        remove_repo_install(
             runner.as_ref(),
             apt.as_ref(),
-            &history_path,
-            &name,
+            &paths,
+            platform,
+            &apps,
+            &slug,
             purge,
             &emit,
         )
@@ -656,11 +601,14 @@ pub async fn download_from_repo(
 #[tauri::command]
 pub async fn install_file(
     path: String,
+    slug: String,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), DebloadError> {
     let runner = state.runner.clone();
     let settings_path = state.settings_path.clone();
+    let repos_path = state.repos_path.clone();
+    let cache_path = state.release_cache_path.clone();
     let places = Places {
         home: state.home_dir.clone(),
         applications: state.applications_dir.clone(),
@@ -678,10 +626,38 @@ pub async fn install_file(
             }
         };
 
-        install_natively(runner.as_ref(), &path, platform, &places, &emit)
+        let placed = install_natively(runner.as_ref(), &path, platform, &places, &emit)?;
+        remember(&repos_path, &cache_path, &slug, &placed)
     })
     .await
     .map_err(|e| DebloadError::Io(e.to_string()))?
+}
+
+/// Inscrit au registre ce que Debload vient de poser de ses mains.
+///
+/// La version vient du cache des releases, que le téléchargement a rafraîchi
+/// juste avant : c'est elle qu'on comparera à la prochaine publiée. Sans elle,
+/// on note quand même — savoir que c'est installé vaut mieux que rien, la
+/// ligne dira simplement qu'elle ne connaît pas la version.
+fn remember(
+    repos_path: &Path,
+    cache_path: &Path,
+    slug: &str,
+    placed: &installer::Placed,
+) -> Result<(), DebloadError> {
+    let version = release_cache::read(cache_path)
+        .get(slug)
+        .map(|entry| entry.release.version.clone())
+        .unwrap_or_default();
+
+    let Some(record) = repo_ops::record_of(slug, &version, placed) else {
+        // Le système en garde la trace lui-même : rien à écrire ici.
+        return Ok(());
+    };
+
+    let mut user = repos::load_user(repos_path);
+    user.remember_install(record);
+    repos::save_user(repos_path, &user)
 }
 
 #[cfg(test)]
@@ -709,45 +685,6 @@ mod tests {
     }
 
     #[test]
-    fn windows_lists_the_catalogue_applications_it_finds() {
-        let dir = tempfile::tempdir().unwrap();
-
-        // Sans fichiers, le catalogue livré fait foi : MailFlow en fait partie.
-        let apps = list_windows(
-            &dir.path().join("absent"),
-            &dir.path().join("aussi"),
-            &mailflow_snapshot(),
-        );
-
-        assert_eq!(apps.len(), 1);
-        assert_eq!(apps[0].name, "MailFlow");
-        assert_eq!(apps[0].version, "0.1.8");
-        // La date compacte de Windows devient lisible par l'interface.
-        assert_eq!(apps[0].installed_at, "2026-09-03");
-        assert!(apps[0].removable);
-        // Le catalogue prête sa description : le registre n'en a pas.
-        assert!(apps[0].summary.contains("Gmail"));
-    }
-
-    #[test]
-    fn windows_ignores_whatever_is_not_in_the_catalogue() {
-        let dir = tempfile::tempdir().unwrap();
-        let installed = vec![InstalledApp {
-            name: "Un jeu quelconque".to_string(),
-            uninstall: Some(r"C:\Jeu\unins.exe".to_string()),
-            ..Default::default()
-        }];
-
-        let apps = list_windows(
-            &dir.path().join("absent"),
-            &dir.path().join("aussi"),
-            &installed,
-        );
-
-        assert!(apps.is_empty(), "Debload ne montre que son catalogue");
-    }
-
-    #[test]
     fn windows_removes_an_application_by_its_own_uninstaller() {
         let dir = tempfile::tempdir().unwrap();
         let fake = FakeRunner::new();
@@ -758,7 +695,7 @@ mod tests {
             &dir.path().join("absent"),
             &dir.path().join("aussi"),
             &mailflow_snapshot(),
-            "MailFlow",
+            "TISEPSE/MailFlow",
             &|_| {},
         )
         .unwrap();
@@ -781,12 +718,125 @@ mod tests {
             &dir.path().join("absent"),
             &dir.path().join("aussi"),
             &mailflow_snapshot(),
-            "Un jeu quelconque",
+            "un/depot-inconnu",
             &|_| {},
         )
         .unwrap_err();
 
         assert!(matches!(err, DebloadError::NotManaged(_)));
+    }
+
+    /// Les trois chemins d'un dossier de test, tels que les attend la
+    /// désinstallation. Le catalogue absent laisse parler celui qui est livré.
+    fn removal_paths(dir: &std::path::Path) -> RemovalPaths {
+        RemovalPaths {
+            catalog: dir.join("catalogue-absent.json"),
+            repos: dir.join("repos.json"),
+            history: dir.join("history.json"),
+        }
+    }
+
+    #[test]
+    fn a_repo_that_installed_nothing_here_has_nothing_to_remove() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeRunner::new();
+
+        // Debian : aucun paquet appris pour ce dépôt.
+        let err = remove_repo_install(
+            &fake,
+            &fake,
+            &removal_paths(dir.path()),
+            Platform::Debian,
+            &[],
+            "TISEPSE/MailFlow",
+            false,
+            &|_| {},
+        )
+        .unwrap_err();
+        assert!(matches!(err, DebloadError::NotManaged(_)));
+
+        // Ailleurs : rien au registre de Debload non plus.
+        let err = remove_repo_install(
+            &fake,
+            &fake,
+            &removal_paths(dir.path()),
+            Platform::LinuxOther,
+            &[],
+            "TISEPSE/MailFlow",
+            false,
+            &|_| {},
+        )
+        .unwrap_err();
+        assert!(matches!(err, DebloadError::NotManaged(_)));
+    }
+
+    #[test]
+    fn debian_removes_the_package_the_repo_delivered() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = removal_paths(dir.path());
+        seed_history(&paths.history, &["mail-flow"]);
+
+        let mut user = repos::UserRepos::default();
+        user.remember_package("TISEPSE/MailFlow", "mail-flow");
+        repos::save_user(&paths.repos, &user).unwrap();
+
+        let fake = FakeRunner::new();
+        fake.on(&["Essential"], CommandOutput::ok("no|optional"));
+        fake.on(&["apt-get"], CommandOutput::ok("Suppression...\n"));
+
+        // L'interface ne connaît que le dépôt ; le nom du paquet se retrouve ici.
+        let result = remove_repo_install(
+            &fake,
+            &fake,
+            &paths,
+            Platform::Debian,
+            &[],
+            "TISEPSE/MailFlow",
+            false,
+            &|_| {},
+        )
+        .unwrap();
+
+        assert_eq!(result.package, "mail-flow");
+        assert!(history::load(&paths.history).entries.is_empty());
+    }
+
+    #[test]
+    fn an_appimage_is_removed_and_forgotten() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = removal_paths(dir.path());
+
+        let file = dir.path().join("MailFlow.AppImage");
+        std::fs::write(&file, b"x").unwrap();
+
+        let mut user = repos::UserRepos::default();
+        user.remember_install(repos::InstallRecord {
+            slug: "TISEPSE/MailFlow".into(),
+            version: "0.1.8".into(),
+            kind: repos::InstalledKind::AppImage,
+            target: file.display().to_string(),
+        });
+        repos::save_user(&paths.repos, &user).unwrap();
+
+        let fake = FakeRunner::new();
+        let result = remove_repo_install(
+            &fake,
+            &fake,
+            &paths,
+            Platform::LinuxOther,
+            &[],
+            "TISEPSE/MailFlow",
+            false,
+            &|_| {},
+        )
+        .unwrap();
+
+        assert_eq!(result.version, "0.1.8");
+        assert!(!file.exists());
+        // Le registre suit : la ligne ne doit plus se croire installée.
+        assert!(repos::load_user(&paths.repos)
+            .install_for("TISEPSE/MailFlow")
+            .is_none());
     }
 
     fn deb_fields() -> &'static str {
@@ -1129,82 +1179,6 @@ mod tests {
         assert!(!result.launchable);
     }
 
-    // --- list ---
-
-    #[test]
-    fn list_returns_installed_entries_with_live_version() {
-        let dir = tempfile::tempdir().unwrap();
-        let hist = dir.path().join("history.json");
-        seed_history(&hist, &["code"]);
-
-        let fake = FakeRunner::new();
-        fake.on(
-            &["Status-Status", "code"],
-            CommandOutput::ok("installed|2.5.0|amd64"),
-        );
-        fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
-
-        let list = list(&fake, &hist).unwrap();
-        assert_eq!(list.len(), 1);
-        // La version affichée est celle réellement installée, pas celle enregistrée.
-        assert_eq!(list[0].version, "2.5.0");
-        assert_eq!(list[0].source_file, "code.deb");
-        assert!(list[0].removable);
-    }
-
-    #[test]
-    fn list_drops_packages_removed_outside_debload() {
-        let dir = tempfile::tempdir().unwrap();
-        let hist = dir.path().join("history.json");
-        seed_history(&hist, &["code", "parti"]);
-
-        let fake = FakeRunner::new();
-        fake.on(
-            &["Status-Status", "code"],
-            CommandOutput::ok("installed|2.5.0|amd64"),
-        );
-        fake.on(&["Essential", "code"], CommandOutput::ok("no|optional"));
-        fake.on(
-            &["Status-Status", "parti"],
-            CommandOutput::fail(1, "inconnu"),
-        );
-
-        let list = list(&fake, &hist).unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "code");
-
-        // La réconciliation est persistée : l'entrée disparue ne revient pas.
-        let saved = crate::history::load(&hist);
-        assert_eq!(saved.entries.len(), 1);
-        assert!(!saved.contains("parti"));
-    }
-
-    #[test]
-    fn protected_package_is_not_removable() {
-        let dir = tempfile::tempdir().unwrap();
-        let hist = dir.path().join("history.json");
-        seed_history(&hist, &["bash"]);
-
-        let fake = FakeRunner::new();
-        fake.on(
-            &["Status-Status", "bash"],
-            CommandOutput::ok("installed|5.2|amd64"),
-        );
-        fake.on(&["Essential", "bash"], CommandOutput::ok("yes|required"));
-
-        let list = list(&fake, &hist).unwrap();
-        assert!(!list[0].removable);
-    }
-
-    #[test]
-    fn empty_history_lists_nothing() {
-        let dir = tempfile::tempdir().unwrap();
-        let fake = FakeRunner::new();
-        let list = list(&fake, &dir.path().join("history.json")).unwrap();
-        assert!(list.is_empty());
-        assert!(fake.calls().is_empty());
-    }
-
     // --- uninstall ---
 
     #[test]
@@ -1319,7 +1293,15 @@ pub fn list_repos(state: State<'_, AppState>) -> Result<Vec<RepoRow>, DebloadErr
     let user = repos::load_user(&state.repos_path);
     let platform = settings::load(&state.settings_path).platform_or_detected();
     let apps = registry_snapshot(state.runner.as_ref(), platform);
-    let rows = repo_ops::rows(state.runner.as_ref(), &catalog, &user, platform, &apps);
+    let hist = history::load(&state.history_path);
+    let rows = repo_ops::rows(
+        state.runner.as_ref(),
+        &catalog,
+        &user,
+        platform,
+        &apps,
+        &hist,
+    );
 
     // Un dépôt retiré n'a plus de raison d'occuper le cache.
     let slugs: Vec<String> = rows.iter().map(|r| r.slug.clone()).collect();
@@ -1344,10 +1326,12 @@ pub async fn refresh_repo(
 ) -> Result<RepoRelease, DebloadError> {
     let runner = state.runner.clone();
     let repos_path = state.repos_path.clone();
+    let catalog_path = state.catalog_path.clone();
     let settings_path = state.settings_path.clone();
     let cache_path = state.release_cache_path.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let catalog = repos::load_catalog(&catalog_path);
         let user = repos::load_user(&repos_path);
         let settings = settings::load(&settings_path);
         let platform = settings.platform_or_detected();
@@ -1355,6 +1339,7 @@ pub async fn refresh_repo(
 
         repo_ops::refresh(
             runner.as_ref(),
+            &catalog,
             &user,
             &settings,
             &apps,

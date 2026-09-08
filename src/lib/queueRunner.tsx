@@ -117,7 +117,7 @@ export function useQueueRunner(canInstall: boolean, onInstalled: () => void): Qu
         if (canInstall) {
           await installDeb(path);
         } else {
-          await installFile(path);
+          await installFile(path, slug);
         }
         dispatch({ type: "installed", slug });
         onInstalled();

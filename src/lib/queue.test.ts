@@ -19,6 +19,7 @@ function row(slug: string): RepoRow {
     description: null,
     package: null,
     installed: null,
+    removable: false,
     bundled: true,
   };
 }

@@ -60,7 +60,6 @@ pub fn run() {
             commands::install_deb,
             commands::install_file,
             commands::launch_app,
-            commands::list_managed,
             commands::list_repos,
             commands::refresh_repo,
             commands::add_repo,
@@ -70,7 +69,7 @@ pub fn run() {
             commands::get_environment,
             commands::save_settings,
             commands::clear_caches,
-            commands::uninstall
+            commands::uninstall_repo
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Debload");

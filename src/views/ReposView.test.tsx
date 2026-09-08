@@ -11,6 +11,7 @@ const {
   downloadFromRepo,
   installDeb,
   installFile,
+  uninstallRepo,
   listen,
 } = vi.hoisted(() => ({
   listRepos: vi.fn(),
@@ -21,6 +22,7 @@ const {
   downloadFromRepo: vi.fn(),
   installDeb: vi.fn(),
   installFile: vi.fn(),
+  uninstallRepo: vi.fn(),
   listen: vi.fn(),
 }));
 
@@ -35,7 +37,8 @@ vi.mock("../lib/api", async () => {
     prepareFromRepo: (s: string, a: string | null) => prepareFromRepo(s, a),
     downloadFromRepo: (s: string, a: string | null) => downloadFromRepo(s, a),
     installDeb: (p: string) => installDeb(p),
-    installFile: (p: string) => installFile(p),
+    installFile: (p: string, slug: string) => installFile(p, slug),
+    uninstallRepo: (s: string, purge: boolean) => uninstallRepo(s, purge),
   };
 });
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
@@ -100,8 +103,12 @@ const row = {
   description: "Tri Gmail",
   package: "mail-flow",
   installed: "0.1.8",
+  removable: true,
   bundled: true,
 };
+
+/** La meme ligne, mais rien d'installe : c'est la qu'on installe. */
+const fresh = { ...row, package: null, installed: null, removable: false };
 
 const rel = {
   slug: row.slug,
@@ -231,7 +238,10 @@ describe("ReposView", () => {
     fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
 
     await waitFor(() =>
-      expect(installFile).toHaveBeenCalledWith("C:\Users\b\Downloads\MailFlow-setup.exe"),
+      expect(installFile).toHaveBeenCalledWith(
+        "C:\Users\b\Downloads\MailFlow-setup.exe",
+        "TISEPSE/MailFlow",
+      ),
     );
     // apt n'a rien à faire ici, et le .deb non plus.
     expect(installDeb).not.toHaveBeenCalled();
@@ -239,6 +249,7 @@ describe("ReposView", () => {
   });
 
   it("dit où le fichier est resté quand rien ne sait l'installer", async () => {
+    listRepos.mockResolvedValue([fresh]);
     refreshRepo.mockResolvedValue({ ...rel, installable: false, updateAvailable: false });
     downloadFromRepo.mockResolvedValue("/home/b/Téléchargements/MailFlow.tar.gz");
     installFile.mockRejectedValue({ code: "not_installable", detail: "MailFlow.tar.gz" });
@@ -250,6 +261,61 @@ describe("ReposView", () => {
       expect(screen.getByText("/home/b/Téléchargements/MailFlow.tar.gz")).toBeTruthy(),
     );
     expect(installDeb).not.toHaveBeenCalled();
+  });
+
+  it("désinstalle depuis la ligne, après confirmation", async () => {
+    // La ligne est à jour : le seul geste qu'elle propose est de la retirer.
+    refreshRepo.mockResolvedValue({ ...rel, updateAvailable: false });
+    uninstallRepo.mockResolvedValue({
+      package: "mail-flow",
+      version: "0.1.8",
+      launchable: false,
+    });
+
+    render(<Harness environment={debian} />);
+    fireEvent.click(await screen.findByRole("button", { name: /désinstaller/i }));
+
+    // Rien ne part sans confirmation.
+    expect(uninstallRepo).not.toHaveBeenCalled();
+    expect(screen.getByText(/supprimer mailflow/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /confirmer/i }));
+
+    // L'interface ne connaît que le dépôt : c'est le backend qui retrouve ce
+    // qu'il a posé sur ce système-là.
+    await waitFor(() => expect(uninstallRepo).toHaveBeenCalledWith("TISEPSE/MailFlow", false));
+
+    // Le catalogue est relu, et la ligne revérifiée sans repasser par GitHub :
+    // sans cela elle continuerait d'annoncer la version qu'elle n'a plus.
+    await waitFor(() => expect(listRepos).toHaveBeenCalledTimes(2));
+    expect(refreshRepo).toHaveBeenLastCalledWith("TISEPSE/MailFlow", false);
+  });
+
+  it("laisse renoncer à une désinstallation", async () => {
+    refreshRepo.mockResolvedValue({ ...rel, updateAvailable: false });
+
+    render(<Harness environment={debian} />);
+    fireEvent.click(await screen.findByRole("button", { name: /désinstaller/i }));
+    fireEvent.click(screen.getByRole("button", { name: /annuler/i }));
+
+    await waitFor(() => expect(screen.queryByText(/supprimer mailflow/i)).toBeNull());
+    expect(uninstallRepo).not.toHaveBeenCalled();
+  });
+
+  it("garde la sortie du désinstalleur quand il échoue", async () => {
+    refreshRepo.mockResolvedValue({ ...rel, updateAvailable: false });
+    uninstallRepo.mockRejectedValue({
+      code: "protected_package",
+      detail: "mail-flow",
+    });
+
+    render(<Harness environment={debian} />);
+    fireEvent.click(await screen.findByRole("button", { name: /désinstaller/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirmer/i }));
+
+    await waitFor(() => expect(screen.getByText(/paquet système essentiel/i)).toBeTruthy());
+    // Le catalogue reste là : un échec ne fait pas disparaître le reste.
+    expect(screen.getByText("MailFlow")).toBeTruthy();
   });
 
   it("signale une référence de dépôt invalide sans vider le champ", async () => {

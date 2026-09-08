@@ -13,9 +13,11 @@ use crate::error::DebloadError;
 use crate::github::{
     self, fetch_latest_release, fetch_newest_release, parse_repo_ref, Asset, Release, RepoRef,
 };
-use crate::pkg::{is_newer, is_newer_plain, query_installed};
+use crate::history::History;
+use crate::installer::{self, Placed};
+use crate::pkg::{is_newer, is_newer_plain, is_protected, query_installed};
 use crate::release_cache;
-use crate::repos::{self, Catalog, CatalogEntry, UserRepos};
+use crate::repos::{self, Catalog, CatalogEntry, InstallRecord, InstalledKind, UserRepos};
 use crate::runner::CommandRunner;
 use crate::settings::{Platform, Settings};
 use crate::win_apps;
@@ -34,8 +36,12 @@ pub struct RepoRow {
     pub package: Option<String>,
     /// Version présente sur le système, si le paquet est connu et installé.
     pub installed: Option<String>,
-    /// Vrai pour une entrée du catalogue livré : elle se masque, elle ne se
-    /// supprime pas.
+    /// Vrai si Debload saurait retirer ce qui est installé. Faux sur un paquet
+    /// que dpkg déclare essentiel, sur une application qui n'a laissé aucune
+    /// ligne de désinstallation, et sur ce qui a été posé hors de Debload.
+    pub removable: bool,
+    /// Vrai pour une entrée du catalogue livré : elle ne se retire pas de la
+    /// liste, à la différence d'un dépôt ajouté à la main.
     pub bundled: bool,
 }
 
@@ -63,31 +69,133 @@ pub struct RepoRelease {
     pub installable: bool,
 }
 
-/// Version présente sur la machine pour ce dépôt, s'il y en a une.
+/// Ce que Debload a posé pour ce dépôt, dit dans les termes de l'installeur.
+pub fn placed_of(record: &InstallRecord) -> Placed {
+    match record.kind {
+        InstalledKind::AppImage => Placed::AppImage(PathBuf::from(&record.target)),
+        InstalledKind::AppBundle => Placed::AppBundle(PathBuf::from(&record.target)),
+        InstalledKind::Rpm => Placed::Rpm(record.target.clone()),
+    }
+}
+
+/// L'inverse : ce qu'il faut inscrire au registre après une installation.
 ///
-/// Les deux systèmes ne se ressemblent pas. Sur Debian, Debload a installé le
-/// paquet lui-même, il en connaît le nom et interroge dpkg. Sur Windows il n'a
-/// rien installé — c'est l'utilisateur qui a lancé le .exe — et il ne reste
-/// que le nom affiché dans la base de registre, à rapprocher du dépôt.
-fn installed_version(
-    runner: &dyn CommandRunner,
+/// `None` quand le système garde la trace lui-même — il n'y a alors rien à
+/// noter, et le noter reviendrait à tenir deux vérités concurrentes.
+pub fn record_of(slug: &str, version: &str, placed: &Placed) -> Option<InstallRecord> {
+    let (kind, target) = match placed {
+        Placed::System => return None,
+        Placed::AppImage(path) => (InstalledKind::AppImage, path.display().to_string()),
+        Placed::AppBundle(path) => (InstalledKind::AppBundle, path.display().to_string()),
+        Placed::Rpm(name) => (InstalledKind::Rpm, name.clone()),
+    };
+
+    Some(InstallRecord {
+        slug: slug.to_string(),
+        version: version.to_string(),
+        kind,
+        target,
+    })
+}
+
+/// Ce que la machine dit d'un dépôt : version installée, et si Debload
+/// saurait la retirer.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Presence {
+    version: Option<String>,
+    removable: bool,
+}
+
+/// De quoi répondre à « qu'y a-t-il d'installé pour ce dépôt ? ».
+///
+/// Les quatre systèmes ne répondent pas de la même source. Sur Debian, Debload
+/// a installé le paquet lui-même, il en connaît le nom et interroge dpkg. Sur
+/// Windows il n'a rien posé — c'est l'utilisateur qui a lancé le .exe — et il
+/// ne reste que le nom affiché dans la base de registre, à rapprocher du dépôt.
+/// Sur les deux autres, personne ne tient de liste : Debload relit la sienne,
+/// celle de ce qu'il a posé, et vérifie que c'est toujours là.
+struct Lookup<'a> {
+    runner: &'a dyn CommandRunner,
     platform: Platform,
-    package: Option<&str>,
-    names: &[&str],
-    apps: &[win_apps::InstalledApp],
-) -> Option<String> {
-    if platform == Platform::Windows {
-        let app = win_apps::find(apps, names)?;
-        // Un installeur qui ne déclare pas sa version reste une application
-        // bel et bien installée : le taire serait la donner pour absente.
-        let unknown = || "version inconnue".to_string();
-        return Some(app.version.clone().unwrap_or_else(unknown));
+    user: &'a UserRepos,
+    apps: &'a [win_apps::InstalledApp],
+    /// L'historique Debian, pour savoir si le paquet vient bien de Debload.
+    history: &'a History,
+}
+
+impl Lookup<'_> {
+    fn presence(&self, slug: &str, names: &[&str]) -> Presence {
+        match self.platform {
+            Platform::Windows => self.in_registry(names),
+            Platform::Debian => self.per_dpkg(slug),
+            Platform::LinuxOther | Platform::MacOs => self.in_ledger(slug),
+        }
     }
 
-    query_installed(runner, package?)
-        .ok()
-        .filter(|state| state.installed)
-        .and_then(|state| state.version)
+    fn version(&self, slug: &str, names: &[&str]) -> Option<String> {
+        self.presence(slug, names).version
+    }
+
+    fn in_registry(&self, names: &[&str]) -> Presence {
+        let Some(app) = win_apps::find(self.apps, names) else {
+            return Presence::default();
+        };
+
+        Presence {
+            // Un installeur qui ne déclare pas sa version reste une
+            // application bel et bien installée : le taire serait la donner
+            // pour absente.
+            version: Some(
+                app.version
+                    .clone()
+                    .unwrap_or_else(|| "version inconnue".to_string()),
+            ),
+            // Sans ligne de désinstallation, Windows lui-même ne saurait pas
+            // la retirer : Debload ne fera pas mieux.
+            removable: app.removal().is_some(),
+        }
+    }
+
+    fn per_dpkg(&self, slug: &str) -> Presence {
+        let Some(package) = self.user.package_for(slug) else {
+            return Presence::default();
+        };
+
+        let version = query_installed(self.runner, package)
+            .ok()
+            .filter(|state| state.installed)
+            .and_then(|state| state.version);
+
+        if version.is_none() {
+            return Presence::default();
+        }
+
+        // Deux refus possibles, et Debload les applique déjà à la
+        // désinstallation : il ne retire que ce qu'il a posé, et jamais un
+        // paquet dont dpkg dit que le système dépend. En cas de doute sur le
+        // second, on protège.
+        let removable =
+            self.history.contains(package) && !is_protected(self.runner, package).unwrap_or(true);
+
+        Presence { version, removable }
+    }
+
+    fn in_ledger(&self, slug: &str) -> Presence {
+        let Some(record) = self.user.install_for(slug) else {
+            return Presence::default();
+        };
+
+        // Le registre dit ce que Debload a fait, le disque dit ce qu'il en
+        // reste : c'est le disque qui tranche.
+        if !installer::still_placed(self.runner, &placed_of(record)) {
+            return Presence::default();
+        }
+
+        Presence {
+            version: Some(record.version.clone()),
+            removable: true,
+        }
+    }
 }
 
 /// Vrai si Debload sait installer au moins l'un de ces fichiers.
@@ -130,7 +238,16 @@ pub fn rows(
     user: &UserRepos,
     platform: Platform,
     apps: &[win_apps::InstalledApp],
+    history: &History,
 ) -> Vec<RepoRow> {
+    let lookup = Lookup {
+        runner,
+        platform,
+        user,
+        apps,
+        history,
+    };
+
     repos::effective(catalog, user)
         .into_iter()
         .map(|entry| {
@@ -138,13 +255,7 @@ pub fn rows(
             let package = user.package_for(&slug).map(str::to_string);
             let label = entry.label.clone().unwrap_or_else(|| entry.repo.clone());
 
-            let installed = installed_version(
-                runner,
-                platform,
-                package.as_deref(),
-                &[label.as_str(), entry.repo.as_str()],
-                apps,
-            );
+            let found = lookup.presence(&slug, &[label.as_str(), entry.repo.as_str()]);
 
             RepoRow {
                 label,
@@ -152,7 +263,8 @@ pub fn rows(
                 repo: entry.repo,
                 description: entry.description,
                 package,
-                installed,
+                installed: found.version,
+                removable: found.removable,
                 bundled: !user.added.iter().any(|e| e.slug() == slug),
                 slug,
             }
@@ -165,6 +277,7 @@ pub fn rows(
 /// qui est déjà installé.
 struct Local<'a> {
     runner: &'a dyn CommandRunner,
+    catalog: &'a Catalog,
     user: &'a UserRepos,
     settings: &'a Settings,
     apps: &'a [win_apps::InstalledApp],
@@ -180,19 +293,30 @@ fn describe(
     stale: bool,
 ) -> RepoRelease {
     let runner = local.runner;
-    let apps = local.apps;
 
     let platform = local.settings.platform_or_detected();
     let arch = github::cached_host_architecture(runner);
     let assets = github::select_assets(&release.assets, &arch, platform);
     let can_install = installable(&assets, platform);
 
-    // Le nom du dépôt tient lieu de nom d'application hors Debian : la
-    // normalisation rapproche « HeroicGamesLauncher » de « Heroic Games
-    // Launcher », c'est-à-dire du libellé qu'aurait porté la ligne.
-    let repo_name = slug.rsplit('/').next().unwrap_or(slug);
-    let package = local.user.package_for(slug);
-    let installed = installed_version(runner, platform, package, &[repo_name], apps);
+    // Les mêmes noms que dans `rows`, sans quoi une ligne s'afficherait
+    // installée sans jamais proposer sa mise à jour : hors Debian, une
+    // application ne se retrouve que par le nom qu'elle affiche, et le libellé
+    // du catalogue est parfois le seul à lui ressembler.
+    let names = repos::display_names(local.catalog, local.user, slug);
+    let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
+
+    // Seule la version compte ici ; `removable` se lit sur la ligne, que
+    // `rows` a déjà remplie avec l'historique sous la main.
+    let no_history = History::new();
+    let lookup = Lookup {
+        runner,
+        platform,
+        user: local.user,
+        apps: local.apps,
+        history: &no_history,
+    };
+    let installed = lookup.version(slug, &borrowed);
 
     let update_available = match installed.as_deref() {
         Some(current) => brings_an_update(runner, platform, &release.version, current),
@@ -220,8 +344,10 @@ fn describe(
 /// Trois chemins, dans cet ordre : une réponse récente déjà en cache évite
 /// l'appel réseau ; sinon on interroge GitHub ; et si le réseau manque, on
 /// ressort la dernière version connue plutôt qu'une ligne d'erreur.
+#[allow(clippy::too_many_arguments)]
 pub fn refresh(
     runner: &dyn CommandRunner,
+    catalog: &Catalog,
     user: &UserRepos,
     settings: &Settings,
     apps: &[win_apps::InstalledApp],
@@ -233,6 +359,7 @@ pub fn refresh(
     let max_age = settings.cache_minutes.saturating_mul(60);
     let local = Local {
         runner,
+        catalog,
         user,
         settings,
         apps,
@@ -349,7 +476,16 @@ pub fn prepare(
     // vieux d'une heure reviendrait à poser une version périmée. Et nul besoin
     // de photographier le registre : seul compte le fichier à prendre, qui ne
     // dépend pas de ce qui est déjà installé.
-    let release = refresh(runner, user, settings, &[], cache_path, slug, true)?;
+    let release = refresh(
+        runner,
+        &Catalog::default(),
+        user,
+        settings,
+        &[],
+        cache_path,
+        slug,
+        true,
+    )?;
     let asset = choose_asset(&release.assets, asset_name)?;
 
     let destination = cache_dir.join(cache_file_name(slug, &asset.name));
@@ -387,7 +523,16 @@ pub fn fetch_asset(
 ) -> Result<PathBuf, DebloadError> {
     // Aucune photographie du registre ici : seul compte le fichier à prendre,
     // et il ne dépend pas de ce qui est déjà installé.
-    let release = refresh(runner, user, settings, &[], cache_path, slug, true)?;
+    let release = refresh(
+        runner,
+        &Catalog::default(),
+        user,
+        settings,
+        &[],
+        cache_path,
+        slug,
+        true,
+    )?;
     let asset = choose_asset(&release.assets, asset_name)?;
 
     // Le nom vient du réseau : on le neutralise avant d'en faire un chemin,
@@ -447,6 +592,7 @@ mod tests {
             &UserRepos::default(),
             Platform::Debian,
             &[],
+            &History::new(),
         );
 
         assert_eq!(rows.len(), 1);
@@ -470,7 +616,14 @@ mod tests {
             CommandOutput::ok("installed|0.1.8|amd64"),
         );
 
-        let rows = rows(&fake, &catalog(), &user, Platform::Debian, &[]);
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Debian,
+            &[],
+            &History::new(),
+        );
         assert_eq!(rows[0].package.as_deref(), Some("mail-flow"));
         assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
     }
@@ -484,7 +637,15 @@ mod tests {
         fake.on(&["dpkg-query"], CommandOutput::fail(1, "inconnu"));
 
         assert_eq!(
-            rows(&fake, &catalog(), &user, Platform::Debian, &[])[0].installed,
+            rows(
+                &fake,
+                &catalog(),
+                &user,
+                Platform::Debian,
+                &[],
+                &History::new()
+            )[0]
+            .installed,
             None
         );
     }
@@ -501,7 +662,14 @@ mod tests {
         }];
 
         let user = UserRepos::default();
-        let rows = rows(&fake, &catalog(), &user, Platform::Windows, &apps);
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Windows,
+            &apps,
+            &History::new(),
+        );
 
         assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
         // Ni dpkg ni base de registre : la photographie est déjà prise, et la
@@ -515,11 +683,229 @@ mod tests {
         let mut user = UserRepos::default();
         add(&mut user, "https://github.com/microsoft/vscode").unwrap();
 
-        let rows = rows(&fake, &catalog(), &user, Platform::Windows, &[]);
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Windows,
+            &[],
+            &History::new(),
+        );
 
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.installed.is_none()));
         assert!(fake.calls().is_empty());
+    }
+
+    /// L'historique de Debload, avec ces paquets-là dedans.
+    fn history_with(names: &[&str]) -> History {
+        let mut hist = History::new();
+        for name in names {
+            hist.upsert(crate::history::HistoryEntry {
+                name: (*name).to_string(),
+                version: "0.1.8".into(),
+                architecture: "amd64".into(),
+                source_file: format!("{name}.deb"),
+                installed_at: "2026-09-03T10:00:00+02:00".into(),
+                summary: String::new(),
+            });
+        }
+        hist
+    }
+
+    #[test]
+    fn debload_only_offers_to_remove_what_it_installed_itself() {
+        let mut user = UserRepos::default();
+        user.remember_package("TISEPSE/MailFlow", "mail-flow");
+
+        let fake = FakeRunner::new();
+        fake.on(
+            &["Status-Status", "mail-flow"],
+            CommandOutput::ok("installed|0.1.8|amd64"),
+        );
+        fake.on(
+            &["Essential", "mail-flow"],
+            CommandOutput::ok("no|optional"),
+        );
+
+        // dpkg dit que le paquet est là, mais Debload ne l'a pas posé : la
+        // ligne l'affiche installé sans proposer de le retirer.
+        let elsewhere = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Debian,
+            &[],
+            &History::new(),
+        );
+        assert_eq!(elsewhere[0].installed.as_deref(), Some("0.1.8"));
+        assert!(!elsewhere[0].removable);
+
+        let ours = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Debian,
+            &[],
+            &history_with(&["mail-flow"]),
+        );
+        assert!(ours[0].removable);
+    }
+
+    #[test]
+    fn an_essential_package_is_never_offered_for_removal() {
+        let mut user = UserRepos::default();
+        user.remember_package("TISEPSE/MailFlow", "mail-flow");
+
+        let fake = FakeRunner::new();
+        fake.on(
+            &["Status-Status", "mail-flow"],
+            CommandOutput::ok("installed|0.1.8|amd64"),
+        );
+        fake.on(
+            &["Essential", "mail-flow"],
+            CommandOutput::ok("yes|required"),
+        );
+
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Debian,
+            &[],
+            &history_with(&["mail-flow"]),
+        );
+        assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
+        assert!(!rows[0].removable);
+    }
+
+    #[test]
+    fn windows_cannot_remove_an_application_that_left_no_uninstaller() {
+        let fake = FakeRunner::new();
+        let apps = vec![win_apps::InstalledApp {
+            name: "MailFlow".to_string(),
+            version: Some("0.1.8".to_string()),
+            ..Default::default()
+        }];
+
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &UserRepos::default(),
+            Platform::Windows,
+            &apps,
+            &History::new(),
+        );
+
+        // Elle est bien là, mais Windows lui-même ne saurait pas la retirer.
+        assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
+        assert!(!rows[0].removable);
+    }
+
+    #[test]
+    fn what_debload_placed_itself_is_read_back_from_its_own_ledger() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("MailFlow.AppImage");
+        std::fs::write(&file, b"x").unwrap();
+
+        let mut user = UserRepos::default();
+        user.remember_install(InstallRecord {
+            slug: "TISEPSE/MailFlow".into(),
+            version: "0.1.8".into(),
+            kind: InstalledKind::AppImage,
+            target: file.display().to_string(),
+        });
+
+        let fake = FakeRunner::new();
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::LinuxOther,
+            &[],
+            &History::new(),
+        );
+
+        assert_eq!(rows[0].installed.as_deref(), Some("0.1.8"));
+        assert!(rows[0].removable);
+        // Ni dpkg ni registre à interroger : la réponse était déjà écrite.
+        assert!(fake.calls().is_empty());
+    }
+
+    #[test]
+    fn an_appimage_erased_by_hand_is_no_longer_installed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut user = UserRepos::default();
+        user.remember_install(InstallRecord {
+            slug: "TISEPSE/MailFlow".into(),
+            version: "0.1.8".into(),
+            kind: InstalledKind::AppImage,
+            // Le registre dit qu'elle est là ; le disque dit que non, et c'est
+            // le disque qui tranche.
+            target: dir.path().join("partie.AppImage").display().to_string(),
+        });
+
+        let fake = FakeRunner::new();
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::LinuxOther,
+            &[],
+            &History::new(),
+        );
+
+        assert_eq!(rows[0].installed, None);
+        assert!(!rows[0].removable);
+    }
+
+    #[test]
+    fn a_repo_is_recognised_under_the_label_it_shows() {
+        // Le libellé du catalogue est le seul nom qui ressemble à ce que
+        // Windows affiche : `describe` doit le chercher, comme `rows`.
+        let catalog = Catalog {
+            entries: vec![CatalogEntry {
+                owner: "Heroic".into(),
+                repo: "HeroicGamesLauncher".into(),
+                label: Some("Heroic Games Launcher".into()),
+                description: None,
+            }],
+        };
+        let apps = vec![win_apps::InstalledApp {
+            name: "Heroic Games Launcher".to_string(),
+            version: Some("2.14.0".to_string()),
+            uninstall: Some(r"C:\Heroic\unins.exe".to_string()),
+            ..Default::default()
+        }];
+
+        let fake = FakeRunner::new();
+        fake.on(&["print-architecture"], CommandOutput::ok("amd64"));
+        let user = UserRepos::default();
+        let settings = Settings {
+            platform: Some(Platform::Windows),
+            ..Settings::default()
+        };
+        let local = Local {
+            runner: &fake,
+            catalog: &catalog,
+            user: &user,
+            settings: &settings,
+            apps: &apps,
+        };
+
+        let release = Release {
+            tag: "v2.15.0".into(),
+            version: "2.15.0".into(),
+            published_at: None,
+            prerelease: false,
+            assets: vec![asset("Heroic-2.15.0-Setup.exe")],
+        };
+
+        let described = describe(&local, "Heroic/HeroicGamesLauncher", &release, 0, false);
+        assert!(
+            described.update_available,
+            "la ligne s'affichait installée sans jamais proposer sa mise à jour"
+        );
     }
 
     #[test]
@@ -545,7 +931,14 @@ mod tests {
         add(&mut user, "https://github.com/microsoft/vscode").unwrap();
 
         let fake = FakeRunner::new();
-        let rows = rows(&fake, &catalog(), &user, Platform::Debian, &[]);
+        let rows = rows(
+            &fake,
+            &catalog(),
+            &user,
+            Platform::Debian,
+            &[],
+            &History::new(),
+        );
 
         let added = rows.iter().find(|r| r.slug == "microsoft/vscode").unwrap();
         assert!(!added.bundled);

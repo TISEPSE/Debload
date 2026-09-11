@@ -76,6 +76,7 @@ pub fn run() {
             commands::uninstall_repo,
             npm_commands::npm_status,
             npm_commands::npm_search,
+            npm_commands::npm_browse,
             npm_commands::npm_latest,
             npm_commands::npm_install,
             npm_commands::npm_uninstall

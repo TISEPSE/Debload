@@ -469,6 +469,28 @@ pub fn search(query: &str, from: usize) -> Result<NpmSearchPage, DebloadError> {
 /// Nombre de résultats demandés au registre à chaque page.
 const SEARCH_PAGE_SIZE: usize = 10;
 
+/// Parcourt les outils en ligne de commande du registre, les plus utilisés
+/// d'abord, page après page.
+///
+/// Le registre refuse une recherche sans texte : le mot-clé `cli`, que les
+/// outils se donnent eux-mêmes, en tient lieu.
+pub fn browse(from: usize) -> Result<NpmSearchPage, DebloadError> {
+    let url = format!("{REGISTRY}/-/v1/search");
+    let body = crate::github::agent()
+        .get(&url)
+        .query("text", "keywords:cli")
+        .query("size", SEARCH_PAGE_SIZE.to_string())
+        .query("from", from.to_string())
+        .query("popularity", "1.0")
+        .query("quality", "0.0")
+        .query("maintenance", "0.0")
+        .call()
+        .and_then(|mut response| response.body_mut().read_to_string())
+        .map_err(registry_error)?;
+
+    parse_search_page(&body)
+}
+
 /// Une page de résultats, et le nombre total que le registre annonce : c'est
 /// lui qui dit s'il reste quelque chose à charger.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

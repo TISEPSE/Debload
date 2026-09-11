@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LogLine, NpmStatus } from "../lib/types";
 
-const { npmStatus, npmSearch, npmLatest, npmInstall, npmUninstall, listen } = vi.hoisted(
+const { npmStatus, npmSearch, npmBrowse, npmLatest, npmInstall, npmUninstall, listen } = vi.hoisted(
   () => ({
     npmStatus: vi.fn(),
     npmSearch: vi.fn(),
+    npmBrowse: vi.fn(),
     npmLatest: vi.fn(),
     npmInstall: vi.fn(),
     npmUninstall: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("../lib/api", async () => {
     ...actual,
     npmStatus: () => npmStatus(),
     npmSearch: (query: string, from?: number) => npmSearch(query, from),
+    npmBrowse: (from?: number) => npmBrowse(from),
     npmLatest: (name: string) => npmLatest(name),
     npmInstall: (name: string) => npmInstall(name),
     npmUninstall: (name: string) => npmUninstall(name),
@@ -51,6 +53,7 @@ describe("NpmView", () => {
     npmStatus.mockResolvedValue(ready);
     npmLatest.mockResolvedValue("7.0.2");
     npmSearch.mockResolvedValue({ hits: [], total: 0 });
+    npmBrowse.mockResolvedValue({ hits: [], total: 0 });
   });
 
   it("dit que npm manque plutôt que d'afficher une page vide", async () => {
@@ -128,6 +131,24 @@ describe("NpmView", () => {
 
     expect(await screen.findByText("pnpm")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /afficher plus/i })).toBeNull();
+  });
+
+  it("parcourt les outils du registre sans rien taper", async () => {
+    npmBrowse.mockImplementation(async (from: number) =>
+      from === 0
+        ? { hits: [{ name: "cowsay", version: "14.1.1", description: null }], total: 2 }
+        : { hits: [{ name: "qrcode-terminal", version: "1.2.2", description: null }], total: 2 },
+    );
+
+    render(<NpmView />);
+
+    expect(await screen.findByRole("heading", { name: /tous les outils npm/i })).toBeTruthy();
+    expect(await screen.findByText("cowsay")).toBeTruthy();
+    expect(npmBrowse).toHaveBeenCalledWith(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /afficher plus/i }));
+    expect(await screen.findByText("qrcode-terminal")).toBeTruthy();
+    expect(npmBrowse).toHaveBeenLastCalledWith(1);
   });
 
   it("ne désinstalle qu'après confirmation", async () => {

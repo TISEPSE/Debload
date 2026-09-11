@@ -58,6 +58,12 @@ pub async fn npm_search(query: String, from: usize) -> Result<NpmSearchPage, Deb
     blocking(move || npm::search(&query, from)).await
 }
 
+/// Les outils du registre, les plus utilisés d'abord, à partir du rang `from`.
+#[tauri::command]
+pub async fn npm_browse(from: usize) -> Result<NpmSearchPage, DebloadError> {
+    blocking(move || npm::browse(from)).await
+}
+
 #[tauri::command]
 pub async fn npm_latest(name: String) -> Result<String, DebloadError> {
     blocking(move || npm::latest(&name)).await

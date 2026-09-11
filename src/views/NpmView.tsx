@@ -9,6 +9,7 @@ import { NPM_SUGGESTIONS } from "../lib/npmSuggestions";
 import { SkeletonRows } from "../components/SkeletonRows";
 import {
   formatError,
+  npmBrowse,
   npmInstall,
   npmLatest,
   npmSearch,
@@ -50,6 +51,11 @@ export function NpmView() {
   /** Nombre de résultats que le registre annonce pour la recherche en cours. */
   const [total, setTotal] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
+
+  /** Les outils du registre, parcourus sans recherche, page après page. */
+  const [browsed, setBrowsed] = useState<NpmHit[]>([]);
+  const [browseTotal, setBrowseTotal] = useState(0);
+  const [browsing, setBrowsing] = useState(true);
 
   const [busy, setBusy] = useState<Busy | null>(null);
   const [failures, setFailures] = useState<Record<string, Failure>>({});
@@ -140,6 +146,25 @@ export function NpmView() {
       setLoadingMore(false);
     }
   }, [query, hits.length]);
+
+  /** Charge une page des outils du registre, à la suite des précédentes. */
+  const browseMore = useCallback(async (from: number) => {
+    setBrowsing(true);
+    try {
+      const page = await npmBrowse(from);
+      setBrowsed((previous) => (from === 0 ? page.hits : [...previous, ...page.hits]));
+      setBrowseTotal(page.total);
+    } catch (error) {
+      setSearchError(formatError(error));
+    } finally {
+      setBrowsing(false);
+    }
+  }, []);
+
+  // Le registre se parcourt dès l'ouverture : rien à taper pour voir ce qui existe.
+  useEffect(() => {
+    void browseMore(0);
+  }, [browseMore]);
 
   const run = useCallback(
     async (name: string, kind: Busy["kind"]) => {
@@ -257,6 +282,37 @@ export function NpmView() {
                   </div>
                 );
               })}
+            </section>
+          )}
+
+          {/* Sans recherche, tout le registre des outils, les plus utilisés
+              d'abord, à charger autant qu'on veut. */}
+          {query.trim().length < 2 && status !== null && (
+            <section>
+              <h2 className="npm__heading">Tous les outils npm</h2>
+              {browsed.length === 0 && browsing ? (
+                <SkeletonRows label="Lecture du registre npm…" count={3} />
+              ) : (
+                <>
+                  <ul className="packages">
+                    {browsed.map((hit) => line(hit.name, hit.description, hit.version, false))}
+                  </ul>
+                  {browsed.length < browseTotal && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary npm__more"
+                      disabled={browsing}
+                      onClick={() => void browseMore(browsed.length)}
+                    >
+                      {browsing
+                        ? "Chargement…"
+                        : `Afficher plus (${(browseTotal - browsed.length).toLocaleString("fr-FR")} ${
+                            browseTotal - browsed.length > 1 ? "restants" : "restant"
+                          })`}
+                    </button>
+                  )}
+                </>
+              )}
             </section>
           )}
 

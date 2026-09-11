@@ -59,6 +59,9 @@ export const npmStatus = () => invoke<NpmStatus>("npm_status");
 export const npmSearch = (query: string, from = 0) =>
   invoke<NpmSearchPage>("npm_search", { query, from });
 
+/** Les outils du registre, les plus utilisés d'abord, à partir du rang `from`. */
+export const npmBrowse = (from = 0) => invoke<NpmSearchPage>("npm_browse", { from });
+
 /** Dernière version publiée d'un paquet. */
 export const npmLatest = (name: string) => invoke<string>("npm_latest", { name });
 

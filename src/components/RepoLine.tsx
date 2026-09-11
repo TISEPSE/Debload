@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   ArrowClockwise,
-  ArrowSquareOut,
   DownloadSimple,
   GithubLogo,
   Info,
@@ -260,17 +259,6 @@ export function RepoLine({
               </span>
             </span>
           </div>
-          {/* La description ne dit pas tout : le dépôt est à un clic. Si le
-              navigateur ne s'ouvre pas, il n'y a rien de plus à faire ici. */}
-          <button
-            type="button"
-            className="btn btn-ghost tile__open"
-            aria-label={`Voir ${row.label} sur GitHub`}
-            title="Voir sur GitHub"
-            onClick={() => void openRepoPage(row.owner, row.repo).catch(() => {})}
-          >
-            <ArrowSquareOut size={20} aria-hidden="true" />
-          </button>
         </header>
 
         {row.description && <p className="tile__description">{row.description}</p>}
@@ -332,6 +320,19 @@ export function RepoLine({
 
         <div className="tile__footer tile__actions">
           {action()}
+
+          {/* La description ne dit pas tout : le dépôt est à un clic, juste à
+              côté du geste d'installer. Si le navigateur ne s'ouvre pas, il
+              n'y a rien de plus à faire ici. */}
+          <button
+            type="button"
+            className="btn btn-secondary tile__github"
+            aria-label={`Voir ${row.label} sur GitHub`}
+            title="Voir sur GitHub"
+            onClick={() => void openRepoPage(row.owner, row.repo).catch(() => {})}
+          >
+            <GithubLogo size={20} aria-hidden="true" />
+          </button>
 
           {/* Désinstaller retire l'application ; Retirer retire le dépôt de la
               liste. Deux gestes différents, qui peuvent se côtoyer. */}

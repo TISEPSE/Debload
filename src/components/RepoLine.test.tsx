@@ -330,7 +330,12 @@ describe("RepoLine", () => {
     // La description seule ne dit pas tout : le dépôt est à un clic.
     openUrl.mockResolvedValue(undefined);
     render(<RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />);
-    fireEvent.click(screen.getByRole("button", { name: "Voir MailFlow sur GitHub" }));
+    const github = screen.getByRole("button", { name: "Voir MailFlow sur GitHub" });
+    // Juste à côté du bouton principal, là où se prend la décision d'installer.
+    expect(github.previousElementSibling).toBe(
+      screen.getByRole("button", { name: /mettre à jour/i }),
+    );
+    fireEvent.click(github);
     expect(openUrl).toHaveBeenCalledWith("https://github.com/TISEPSE/MailFlow");
   });
 

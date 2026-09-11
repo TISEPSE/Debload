@@ -108,6 +108,9 @@ polkit, aucune entrée sudoers.
 
 - Seuls `github.com` et les hôtes de fichiers de GitHub sont téléchargeables : une
   release ne peut pas rediriger Debload ailleurs.
+- L'interface affiche l'avatar du propriétaire de chaque dépôt, servi par
+  `avatars.githubusercontent.com`. Hors ligne, une icône le remplace : rien d'autre ne
+  dépend de ce chargement.
 - Pour npm, Debload n'interroge que `registry.npmjs.org`, et ne passe à npm qu'un nom
   du registre, validé avant tout appel : ni option, ni URL, ni chemin, ni version
   accolée. Il n'installe jamais en root ; les scripts d'installation d'un paquet
@@ -126,8 +129,8 @@ polkit, aucune entrée sudoers.
 ```bash
 npm install
 npm run tauri dev            # lancer
-npm test                     # tests frontend (134)
-cd src-tauri && cargo test   # tests backend (239)
+npm test                     # tests frontend (230)
+cd src-tauri && cargo test   # tests backend (241)
 npm run tauri build          # produire le .deb
 ```
 

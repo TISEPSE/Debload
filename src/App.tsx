@@ -6,10 +6,11 @@ import { QueueProvider, useQueueRunner } from "./lib/queueRunner";
 import type { Environment, Settings } from "./lib/types";
 import { InstallView } from "./views/InstallView";
 import { IntroView } from "./views/IntroView";
+import { NpmView } from "./views/NpmView";
 import { ReposView } from "./views/ReposView";
 import { SettingsView } from "./views/SettingsView";
 
-type Tab = "install" | "repos" | "settings";
+type Tab = "install" | "repos" | "npm" | "settings";
 
 interface TabInfo {
   id: Tab;
@@ -21,6 +22,8 @@ const TABS: TabInfo[] = [
   // Déposer un .deb n'a de sens que là où apt saurait l'installer.
   { id: "install", needs: "apt" },
   { id: "repos", needs: null },
+  // Présent partout : sans npm, l'onglet dit ce qui manque.
+  { id: "npm", needs: null },
   { id: "settings", needs: null },
 ];
 
@@ -40,6 +43,8 @@ function tabLabel(info: TabInfo): string {
       return "Installer";
     case "repos":
       return "Dépôts";
+    case "npm":
+      return "npm";
     case "settings":
       return "Paramètres";
   }
@@ -164,6 +169,7 @@ export default function App() {
             <ReposView environment={environment} refreshToken={refreshToken} />
           </QueueProvider>
         )}
+        {tab === "npm" && <NpmView />}
         {tab === "settings" && (
           <SettingsView environment={environment} onSave={persist} />
         )}

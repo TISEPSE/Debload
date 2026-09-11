@@ -934,3 +934,13 @@ body {
   font-size: 13px;
   line-height: 1.45;
 }
+
+/* Page « npm » : deux listes, qu'un titre discret suffit à séparer. */
+.npm__heading {
+  margin: 8px 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}

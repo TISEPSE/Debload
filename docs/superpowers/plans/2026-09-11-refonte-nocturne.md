@@ -247,6 +247,18 @@ it("encode un propriétaire inattendu", () => {
 
 ---
 
+### Task 3 bis: `SkeletonRows` (ajout du 11 septembre)
+
+**Files:** Create `src/components/SkeletonRows.tsx`, `SkeletonRows.test.tsx` ; styles `.skeleton*` dans `app.css`.
+
+**Interfaces — Produces:** `export function SkeletonRows(props: { label: string; count?: number; delayMs?: number }): JSX.Element | null`.
+
+- [ ] Tests (horloge simulée) : rien avant 200 ms ; après 260 ms, `count` éléments `.skeleton__row`, conteneur `.skeleton__rows` en `aria-hidden`, `role="status"` portant `label`.
+- [ ] Implémentation, puis utilisation dans les tâches 4 et 6 : la vue rend toujours son formulaire, et `SkeletonRows` à la place de la liste tant qu'elle charge.
+- [ ] Tests de vue : `listRepos` en attente → champ d'ajout présent ; `npmStatus` en attente → champ de recherche présent ; recherche en cours → squelette sous « Registre npm ».
+
+---
+
 ### Task 4: Dépôts
 
 **Files:** Modify `src/lib/queue.ts`, `queue.test.ts`, `src/components/RepoLine.tsx`, `RepoLine.test.tsx`, `src/views/ReposView.tsx`, `app.css`.

@@ -840,6 +840,132 @@
   color: var(--color-text-3);
 }
 
+/* --- Composants partagés ------------------------------------------------ */
+
+/* Lu par le lecteur d'écran, invisible à l'œil. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+  white-space: nowrap;
+}
+
+/* L'état d'une ligne : un mot et une icône, jamais la couleur seule. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+
+.status__icon {
+  flex-shrink: 0;
+}
+
+.status--update {
+  color: var(--color-accent);
+  font-weight: 500;
+}
+
+.status--current {
+  color: var(--color-success);
+}
+
+.status--error {
+  color: var(--color-danger);
+  font-weight: 500;
+}
+
+.status--waiting,
+.status--offline {
+  color: var(--color-text-3);
+}
+
+/* La tuile d'un dépôt : l'avatar de son propriétaire, ou une icône. */
+.avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-2);
+  color: var(--color-accent);
+}
+
+.avatar__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Lignes fantômes : la forme d'une vraie ligne, balayée d'un reflet. */
+.skeleton__row {
+  pointer-events: none;
+}
+
+.skeleton__block {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 0%,
+    color-mix(in srgb, var(--color-text) 10%, var(--color-surface-2)) 50%,
+    var(--color-surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+
+.skeleton__tile {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+}
+
+.skeleton__lines {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.skeleton__line {
+  width: 60%;
+  height: 10px;
+}
+
+.skeleton__line--title {
+  width: 35%;
+  height: 12px;
+}
+
+.skeleton__button {
+  flex: none;
+  width: 104px;
+  height: 44px;
+  border-radius: var(--radius-md);
+}
+
+@keyframes skeleton-sweep {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton__block { animation: none; }
+}
+
 /* --- Page « npm » ------------------------------------------------------- */
 
 /* Deux listes, qu'un titre discret suffit à séparer. */

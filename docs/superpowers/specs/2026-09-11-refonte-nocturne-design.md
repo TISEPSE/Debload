@@ -167,6 +167,19 @@ code de l'application. »
 - Option de purge suivie de « Tes réglages seront perdus. »
 - « Annuler » reçoit le focus à l'ouverture ; Échap annule.
 
+## Chargement (ajout du 11 septembre)
+
+- Les barres de saisie ne dépendent plus du chargement : sur « Dépôts », le formulaire
+  d'ajout et la barre « Vérifier maintenant » s'affichent aussitôt ; sur « npm », le champ
+  de recherche aussi. Seules les listes attendent.
+- `SkeletonRows` (`src/components/SkeletonRows.tsx`, props `label`, `count = 4`,
+  `delayMs = 250`) dessine des lignes fantômes de la forme d'une ligne réelle : tuile,
+  deux traits de texte, bloc bouton, balayage lumineux coupé par
+  `prefers-reduced-motion`. Rien n'apparaît avant `delayMs`. Les formes sont
+  `aria-hidden` ; la phrase `label` est annoncée par `role="status"`.
+- Il remplace « Lecture du catalogue… » (Dépôts), « Lecture des paquets npm… » (liste
+  installée de npm), et s'affiche sous « Registre npm » pendant une recherche.
+
 ## Données ajoutées
 
 - `queuePosition(queue: Job[], slug: string): number | null` dans `src/lib/queue.ts` :

@@ -4,6 +4,8 @@ import {
   jobFor,
   nextToDownload,
   nextToInstall,
+  ordinal,
+  queuePosition,
   queueReducer,
   working,
   type Job,
@@ -37,6 +39,30 @@ function play(...actions: Parameters<typeof queueReducer>[1][]): Job[] {
 
 const enqueueMailflow = { type: "enqueue", row: mailflow, assetName: null } as const;
 const enqueueNexus = { type: "enqueue", row: nexus, assetName: null } as const;
+
+describe("rang dans la file", () => {
+  it("compte les lignes qui attendent encore, dans l'ordre", () => {
+    const bitwarden = row("bitwarden/clients");
+    const queue = play(
+      enqueueMailflow,
+      enqueueNexus,
+      { type: "enqueue", row: bitwarden, assetName: null },
+      { type: "download_started", slug: mailflow.slug },
+    );
+
+    // MailFlow télécharge déjà : il n'attend plus son tour.
+    expect(queuePosition(queue, mailflow.slug)).toBeNull();
+    expect(queuePosition(queue, nexus.slug)).toBe(1);
+    expect(queuePosition(queue, bitwarden.slug)).toBe(2);
+    expect(queuePosition(queue, "absent/absent")).toBeNull();
+  });
+
+  it("écrit les rangs en français", () => {
+    expect(ordinal(1)).toBe("1ʳᵉ");
+    expect(ordinal(2)).toBe("2ᵉ");
+    expect(ordinal(10)).toBe("10ᵉ");
+  });
+});
 
 describe("queueReducer", () => {
   it("garde les entrées dans leur ordre d'arrivée", () => {

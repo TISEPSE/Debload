@@ -199,6 +199,23 @@ export function working(queue: Job[]): boolean {
   return queue.some((job) => pending(job.state));
 }
 
+/**
+ * Le rang d'une ligne parmi celles qui attendent leur tour, à partir de 1.
+ *
+ * Une ligne qui télécharge ou s'installe déjà n'attend plus : elle n'a pas
+ * de rang, pas plus qu'une ligne absente de la file.
+ */
+export function queuePosition(queue: Job[], slug: string): number | null {
+  const waiting = queue.filter((job) => job.state.phase === "queued");
+  const index = waiting.findIndex((job) => job.row.slug === slug);
+  return index === -1 ? null : index + 1;
+}
+
+/** Un rang tel qu'on l'écrit : « 1ʳᵉ », puis « 2ᵉ », « 3ᵉ »… */
+export function ordinal(n: number): string {
+  return n === 1 ? "1ʳᵉ" : `${n}ᵉ`;
+}
+
 export function jobFor(queue: Job[], slug: string): Job | undefined {
   return queue.find((job) => job.row.slug === slug);
 }

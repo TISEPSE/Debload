@@ -85,12 +85,14 @@ export interface RepoRelease {
   installable: boolean;
 }
 
-/** Un paquet npm global que Debload a installé, tel que npm le voit. */
+/** Un paquet npm global, tel que npm le voit. */
 export interface NpmPackage {
   name: string;
   installed: string;
   /** Où il est installé, le dossier personnel écrit « ~ ». */
   prefix: string;
+  /** Vrai quand Debload l'a installé : lui seul se désinstalle d'ici. */
+  managed: boolean;
 }
 
 /** Ce que l'onglet npm sait avant tout appel au registre. */

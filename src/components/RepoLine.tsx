@@ -268,10 +268,12 @@ export function RepoLine({
             <span className="tile__name" title={row.label}>
               {row.label}
             </span>
-            <span className="tile__meta">
+            <span className="tile__meta tile__meta--stack">
               <span className="tile__version">
                 <GithubLogo size={13} aria-hidden="true" />
-                {row.slug}
+                <span className="tile__truncate" title={row.slug}>
+                  {row.slug}
+                </span>
               </span>
               {/* Le site du projet, quand il en déclare un : un clic l'ouvre
                   dans le navigateur. */}
@@ -284,7 +286,7 @@ export function RepoLine({
                   onClick={() => void openWebsite(homepage).catch(() => {})}
                 >
                   <Globe size={13} aria-hidden="true" />
-                  {siteLabel(homepage)}
+                  <span className="tile__truncate">{siteLabel(homepage)}</span>
                 </button>
               )}
             </span>

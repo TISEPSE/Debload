@@ -53,6 +53,22 @@ describe("NpmLine", () => {
     expect(container.querySelector("img")!.getAttribute("src")).toContain("/microsoft?");
   });
 
+  it("ne propose pas de retirer un paquet installé hors Debload", () => {
+    render(
+      <NpmLine
+        {...props({
+          installed: "5.2.0",
+          latest: "5.2.0",
+          prefix: "~/.local",
+          managed: false,
+          onUninstall: noop,
+        })}
+      />,
+    );
+    expect(screen.getByText(/installé hors debload/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /désinstaller/i })).toBeNull();
+  });
+
   it("écrit où le paquet est installé", () => {
     render(
       <NpmLine

@@ -35,7 +35,7 @@ const ready: NpmStatus = {
   available: true,
   binDir: "/home/x/.local/bin",
   binOnPath: true,
-  packages: [{ name: "typescript", installed: "5.9.2", prefix: "~/.local" }],
+  packages: [{ name: "typescript", installed: "5.9.2", prefix: "~/.local", managed: true }],
 };
 
 /** Rejoue une ligne de sortie comme le backend l'émettrait pendant l'opération. */
@@ -212,6 +212,30 @@ describe("NpmView", () => {
     await screen.findByText("typescript");
     // typescript figure dans les suggestions, qui savent qu'il vient de Microsoft.
     expect(container.querySelector('.packages img[src*="/microsoft?"]')).not.toBeNull();
+  });
+
+  it("montre aussi les paquets globaux installés hors Debload, sans proposer de les retirer", async () => {
+    npmStatus.mockResolvedValue({
+      ...ready,
+      packages: [
+        ...ready.packages,
+        { name: "fast-cli", installed: "5.2.0", prefix: "~/.local", managed: false },
+      ],
+    });
+    render(<NpmView />);
+
+    expect(await screen.findByText("fast-cli")).toBeTruthy();
+    expect(screen.getByText(/installé hors debload/i)).toBeTruthy();
+    // Seul typescript, posé par Debload, se désinstalle d'ici.
+    expect(screen.getAllByRole("button", { name: /désinstaller/i })).toHaveLength(1);
+  });
+
+  it("garde la section des paquets installés, même vide", async () => {
+    npmStatus.mockResolvedValue({ ...ready, packages: [] });
+    render(<NpmView />);
+
+    expect(await screen.findByRole("heading", { name: /paquets installés/i })).toBeTruthy();
+    expect(screen.getByText(/aucun paquet npm global/i)).toBeTruthy();
   });
 
   it("installe une suggestion d'un clic", async () => {

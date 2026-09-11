@@ -12,7 +12,7 @@ export interface NpmLineProps {
   description?: string | null;
   /** Le compte GitHub d'où vient le code, dont l'avatar sert de logo. */
   owner?: string | null;
-  /** Version installée par Debload, ou `null` s'il n'a rien posé. */
+  /** Version installée, ou `null` quand le paquet n'est pas là. */
   installed: string | null;
   /** Dernière version publiée, ou `null` tant que le registre n'a pas répondu. */
   latest: string | null;
@@ -27,10 +27,15 @@ export interface NpmLineProps {
   onInstall: () => void;
   /** Absent quand il n'y a rien à retirer. */
   onUninstall?: () => void;
+  /**
+   * Faux pour un paquet global posé sans Debload : il se montre et se met à
+   * jour, mais ne se désinstalle pas d'ici.
+   */
+  managed?: boolean;
 }
 
 /**
- * Un paquet npm installé par Debload.
+ * Un paquet npm global installé, par Debload ou sans lui.
  *
  * Même grammaire qu'une ligne de « Dépôts » : ce que la ligne annonce, puis le
  * geste qui lui reste à faire (installer, mettre à jour, ou retirer).
@@ -47,12 +52,17 @@ export function NpmLine({
   failure,
   onInstall,
   onUninstall,
+  managed = true,
 }: NpmLineProps) {
   const updateAvailable = installed !== null && latest !== null && latest !== installed;
 
   /** La version sous le nom : où il est installé, ou ce que le registre publie. */
   const version =
-    installed !== null ? (prefix ? `${installed} · ${prefix}` : installed) : latest;
+    installed !== null
+      ? [installed, prefix, managed ? null : "installé hors Debload"]
+          .filter(Boolean)
+          .join(" · ")
+      : latest;
 
   const verdict = () => {
     if (installed === null) {
@@ -123,7 +133,7 @@ export function NpmLine({
             </button>
           )}
 
-          {onUninstall && installed !== null && (
+          {onUninstall && installed !== null && managed && (
             <button
               type="button"
               className="btn btn-danger"

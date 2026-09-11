@@ -15,7 +15,7 @@ use crate::error::DebloadError;
 use crate::npm_store::{self, NpmRecord};
 use crate::runner::CommandRunner;
 
-/// Un paquet npm global que Debload a installé, tel que npm le voit.
+/// Un paquet npm global, tel que npm le voit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NpmPackage {
@@ -24,7 +24,14 @@ pub struct NpmPackage {
     /// Où il est installé, le dossier personnel écrit `~` : la ligne le dit,
     /// et c'est là que la mise à jour et la désinstallation viseront.
     pub prefix: String,
+    /// Vrai quand Debload l'a installé : lui seul se désinstalle d'ici. Les
+    /// autres paquets globaux se montrent et se mettent à jour, sans plus.
+    pub managed: bool,
 }
+
+/// Des paquets globaux qui font marcher npm lui-même : les retirer ou les
+/// mettre à jour d'ici casserait l'outil dont l'onglet dépend.
+const UNMANAGEABLE: &[&str] = &["npm", "corepack"];
 
 /// Ce que l'onglet npm doit savoir avant tout appel au registre.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -139,7 +146,8 @@ fn installed_under(runner: &dyn CommandRunner, prefix: &Path) -> Option<Vec<(Str
     Some(parse_ls(&out.stdout))
 }
 
-/// Ce que Debload a installé et que npm voit encore.
+/// Les paquets globaux que npm voit : ceux que Debload a installés, et les
+/// autres, posés sans lui dans le même dossier.
 ///
 /// Un paquet noté que npm ne voit plus a été retiré à la main : il est oublié,
 /// comme une AppImage effacée.
@@ -179,6 +187,7 @@ pub fn status(
                     name: record.name.clone(),
                     installed: version.clone(),
                     prefix: tilde(Path::new(&record.prefix), home),
+                    managed: true,
                 });
                 true
             }
@@ -189,6 +198,26 @@ pub fn status(
     if store.packages.len() != before {
         let _ = npm_store::save(store_path, &store);
     }
+
+    // Le dossier global contient aussi ce qui a été installé sans Debload : on
+    // le montre, sans l'adopter.
+    let listing = listings
+        .entry(prefix.display().to_string())
+        .or_insert_with(|| installed_under(runner, &prefix));
+    if let Some(listing) = listing {
+        for (name, version) in listing.iter() {
+            let known = packages.iter().any(|p: &NpmPackage| &p.name == name);
+            if !known && !UNMANAGEABLE.contains(&name.as_str()) {
+                packages.push(NpmPackage {
+                    name: name.clone(),
+                    installed: version.clone(),
+                    prefix: tilde(&prefix, home),
+                    managed: false,
+                });
+            }
+        }
+    }
+    packages.sort_by(|a, b| a.name.cmp(&b.name));
 
     let bin = bin_dir(&prefix);
     NpmStatus {
@@ -236,6 +265,7 @@ pub fn install(
         name: name.to_string(),
         installed,
         prefix: tilde(&prefix, home),
+        managed: true,
     })
 }
 
@@ -848,11 +878,53 @@ mod tests {
                 name: "typescript".into(),
                 installed: "7.0.2".into(),
                 prefix: prefix.clone(),
+                managed: true,
             }]
         );
         assert!(!found.bin_on_path);
         // pnpm a été retiré à la main : Debload l'oublie, comme une AppImage effacée.
         assert!(npm_store::load(&store_path).record_for("pnpm").is_none());
+    }
+
+    #[test]
+    fn the_status_also_lists_global_packages_installed_elsewhere() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+        let prefix = dir.path().display().to_string();
+        seed(&store_path, &["typescript"], &prefix);
+
+        let fake = FakeRunner::new();
+        fake.on(&["config", "prefix"], CommandOutput::ok(&prefix));
+        fake.on(
+            &["ls"],
+            CommandOutput::ok(
+                r#"{"dependencies":{"typescript":{"version":"7.0.2"},"fast-cli":{"version":"5.2.0"},"npm":{"version":"11.0.0"}}}"#,
+            ),
+        );
+
+        let found = status(&fake, &store_path, Path::new("/h"), None);
+
+        // Tout ce que npm a posé dans son dossier global, par ordre alphabétique ;
+        // npm lui-même n'est pas un paquet qu'on gère d'ici.
+        assert_eq!(
+            found.packages,
+            vec![
+                NpmPackage {
+                    name: "fast-cli".into(),
+                    installed: "5.2.0".into(),
+                    prefix: prefix.clone(),
+                    managed: false,
+                },
+                NpmPackage {
+                    name: "typescript".into(),
+                    installed: "7.0.2".into(),
+                    prefix: prefix.clone(),
+                    managed: true,
+                },
+            ]
+        );
+        // Le voir ne vaut pas l'adopter : rien n'est noté pour fast-cli.
+        assert!(npm_store::load(&store_path).record_for("fast-cli").is_none());
     }
 
     #[test]

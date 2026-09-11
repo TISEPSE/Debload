@@ -1116,6 +1116,27 @@
   flex: none;
 }
 
+/* Les titres d'une carte tiennent chacun sur une ligne : ce qui dépasse se
+   coupe d'un « … » et se lit en entier dans l'infobulle. */
+.tile__meta--stack {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.tile__version,
+.tile__link {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.tile__truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .tile .repo__hint,
 .tile .repo__assets {
   margin: 0;

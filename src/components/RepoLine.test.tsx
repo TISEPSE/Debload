@@ -324,7 +324,10 @@ describe("RepoLine", () => {
     expect(container.querySelector(".tile img")!.getAttribute("src")).toBe(
       "https://avatars.githubusercontent.com/TISEPSE?s=88",
     );
-    expect(screen.getByText("TISEPSE/MailFlow")).toBeTruthy();
+    // Coupé sur une ligne pour gagner de la place, le slug reste lisible en entier.
+    expect(screen.getByText("TISEPSE/MailFlow").getAttribute("title")).toBe(
+      "TISEPSE/MailFlow",
+    );
   });
 
   it("ouvre le dépôt sur GitHub d'un clic", () => {

@@ -298,17 +298,20 @@ export function NpmView() {
             </p>
           )}
 
-          {/* Ce qu'on a déjà, en premier : la liste du registre, elle, s'allonge
-              à chaque « Afficher plus ». Rien à montrer tant que c'est vide. */}
-          {(status === null || status.packages.length > 0) && (
-            <section>
-              <h2 className="npm__heading">
-                <CheckCircle size={15} aria-hidden="true" />
-                Installés par Debload
-              </h2>
-              {status === null ? (
-                <SkeletonRows label="Lecture des paquets npm…" count={2} />
-              ) : (
+          {/* Ce qu'on a déjà, en premier et toujours : la liste du registre,
+              elle, s'allonge à chaque « Afficher plus ». */}
+          <section>
+            <h2 className="npm__heading">
+              <CheckCircle size={15} aria-hidden="true" />
+              Paquets installés
+            </h2>
+            {status === null ? (
+              <SkeletonRows label="Lecture des paquets npm…" count={2} />
+            ) : status.packages.length === 0 ? (
+              <p className="empty">
+                Aucun paquet npm global pour l'instant. Installe-en un ci-dessous.
+              </p>
+            ) : (
                 <ul className="packages">
                   {status.packages.map((pkg) => (
                     <NpmLine
@@ -322,13 +325,14 @@ export function NpmView() {
                       disabled={busy !== null}
                       failure={failures[pkg.name] ?? null}
                       onInstall={() => void run(pkg.name, "installing")}
-                      onUninstall={() => setPending(pkg.name)}
+                      // Seul ce que Debload a posé se retire d'ici.
+                      managed={pkg.managed}
+                      onUninstall={pkg.managed ? () => setPending(pkg.name) : undefined}
                     />
                   ))}
                 </ul>
               )}
-            </section>
-          )}
+          </section>
 
           {searchError && <p className="result result--error">{searchError}</p>}
 

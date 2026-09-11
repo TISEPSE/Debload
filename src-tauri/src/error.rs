@@ -45,6 +45,12 @@ pub enum DebloadError {
     CommandFailed(String),
     /// Erreur d'entrée/sortie côté système de fichiers.
     Io(String),
+    /// npm ne répond pas : Node.js n'est pas installé, ou pas dans le PATH.
+    NpmMissing,
+    /// Ce qui n'est pas un simple nom du registre npm.
+    InvalidNpmName(String),
+    /// Le registre npm est injoignable ou répond de travers.
+    NpmRegistryFailed(String),
 }
 
 impl std::fmt::Display for DebloadError {
@@ -73,6 +79,9 @@ impl std::fmt::Display for DebloadError {
             Self::DpkgLocked => write!(f, "Une autre opération apt est en cours"),
             Self::CommandFailed(m) => write!(f, "{m}"),
             Self::Io(m) => write!(f, "Erreur système : {m}"),
+            Self::NpmMissing => write!(f, "npm introuvable"),
+            Self::InvalidNpmName(n) => write!(f, "Nom de paquet npm invalide : {n}"),
+            Self::NpmRegistryFailed(m) => write!(f, "Registre npm : {m}"),
         }
     }
 }

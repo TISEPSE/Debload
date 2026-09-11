@@ -924,7 +924,9 @@ mod tests {
             ]
         );
         // Le voir ne vaut pas l'adopter : rien n'est noté pour fast-cli.
-        assert!(npm_store::load(&store_path).record_for("fast-cli").is_none());
+        assert!(npm_store::load(&store_path)
+            .record_for("fast-cli")
+            .is_none());
     }
 
     #[test]
@@ -1096,12 +1098,21 @@ mod tests {
     #[test]
     fn finds_the_github_owner_whatever_the_form_of_the_address() {
         for (url, owner) in [
-            ("git+https://github.com/microsoft/TypeScript.git", "microsoft"),
+            (
+                "git+https://github.com/microsoft/TypeScript.git",
+                "microsoft",
+            ),
             ("https://github.com/pnpm/pnpm", "pnpm"),
             ("git://github.com/http-party/http-server.git", "http-party"),
-            ("git+ssh://git@github.com/mermaid-js/mermaid-cli.git", "mermaid-js"),
+            (
+                "git+ssh://git@github.com/mermaid-js/mermaid-cli.git",
+                "mermaid-js",
+            ),
             ("git@github.com:Unitech/pm2.git", "Unitech"),
-            ("https://www.github.com/GoogleChrome/lighthouse", "GoogleChrome"),
+            (
+                "https://www.github.com/GoogleChrome/lighthouse",
+                "GoogleChrome",
+            ),
             ("github:sindresorhus/np", "sindresorhus"),
         ] {
             assert_eq!(github_owner(url).as_deref(), Some(owner), "{url}");

@@ -598,7 +598,10 @@ mod tests {
             &[],
             &History::new(),
         );
-        assert_eq!(rows[0].homepage.as_deref(), Some("https://mailflow.example"));
+        assert_eq!(
+            rows[0].homepage.as_deref(),
+            Some("https://mailflow.example")
+        );
     }
 
     #[test]

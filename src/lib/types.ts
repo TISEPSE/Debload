@@ -83,6 +83,30 @@ export interface RepoRelease {
   installable: boolean;
 }
 
+/** Un paquet npm global que Debload a installé, tel que npm le voit. */
+export interface NpmPackage {
+  name: string;
+  installed: string;
+}
+
+/** Ce que l'onglet npm sait avant tout appel au registre. */
+export interface NpmStatus {
+  /** Faux quand npm ne répond pas : Node.js manque, ou n'est pas dans le PATH. */
+  available: boolean;
+  /** Où arrivent les commandes installées. */
+  binDir: string | null;
+  /** Faux quand ce dossier n'est pas dans le PATH : les commandes resteraient introuvables. */
+  binOnPath: boolean;
+  packages: NpmPackage[];
+}
+
+/** Un résultat de recherche du registre npm. */
+export interface NpmHit {
+  name: string;
+  version: string;
+  description: string | null;
+}
+
 /** Famille de système, telle que l'utilisateur l'a confirmée à l'accueil. */
 export type Platform = "debian" | "linux-other" | "windows" | "mac-os";
 

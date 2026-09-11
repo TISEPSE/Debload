@@ -3,6 +3,9 @@ import type {
   DebInfo,
   DebloadError,
   Environment,
+  NpmHit,
+  NpmPackage,
+  NpmStatus,
   OperationResult,
   RepoRelease,
   RepoRow,
@@ -48,6 +51,19 @@ export const prepareFromRepo = (slug: string, assetName: string | null) =>
 /** Hors Debian : récupère le fichier et renvoie où il a été déposé. */
 export const downloadFromRepo = (slug: string, assetName: string | null) =>
   invoke<string>("download_from_repo", { slug, assetName });
+
+/** Ce que Debload a installé avec npm, sans appel au registre. */
+export const npmStatus = () => invoke<NpmStatus>("npm_status");
+
+export const npmSearch = (query: string) => invoke<NpmHit[]>("npm_search", { query });
+
+/** Dernière version publiée d'un paquet. */
+export const npmLatest = (name: string) => invoke<string>("npm_latest", { name });
+
+/** Installe un paquet, ou le met à jour : c'est le même geste. */
+export const npmInstall = (name: string) => invoke<NpmPackage>("npm_install", { name });
+
+export const npmUninstall = (name: string) => invoke<void>("npm_uninstall", { name });
 
 export const getEnvironment = () => invoke<Environment>("get_environment");
 
@@ -106,6 +122,12 @@ export function formatError(error: unknown): string {
       return `${err.detail} est un paquet système essentiel : Debload refuse de le supprimer.`;
     case "command_failed":
       return err.detail && err.detail.length > 0 ? err.detail : "L'opération a échoué.";
+    case "npm_missing":
+      return "npm introuvable — installe Node.js pour utiliser cet onglet.";
+    case "invalid_npm_name":
+      return `Nom de paquet npm invalide : ${err.detail}`;
+    case "npm_registry_failed":
+      return `Registre npm injoignable : ${err.detail}`;
     case "io":
       return err.detail
         ? `Le transfert s'est interrompu : ${err.detail}`

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { ArrowsClockwise, Check } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  ArrowsClockwise,
+  Check,
+  DownloadSimple,
+  GithubLogo,
+  Plus,
+} from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LogPanel } from "../components/LogPanel";
@@ -234,23 +241,28 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
       {/* Entrée installe : c'est le geste pour lequel on colle une URL.
           « Ajouter » reste là pour suivre un dépôt sans rien poser. */}
       <form className="repo-add" aria-label="Ajouter un dépôt" onSubmit={submitInstall}>
-        <input
-          type="text"
-          className="input repo-add__field"
-          placeholder="Ajouter un dépôt : owner/repo ou une URL GitHub"
-          aria-label="Ajouter un dépôt GitHub"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-        />
+        <span className="input-icon">
+          <GithubLogo size={18} className="input-icon__glyph" aria-hidden="true" />
+          <input
+            type="text"
+            className="input repo-add__field"
+            placeholder="Ajouter un dépôt : owner/repo ou une URL GitHub"
+            aria-label="Ajouter un dépôt GitHub"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </span>
         <button
           type="button"
           className="btn btn-secondary"
           disabled={draft.trim() === ""}
           onClick={() => void submitAdd()}
         >
+          <Plus size={16} aria-hidden="true" />
           Ajouter
         </button>
         <button type="submit" className="btn btn-primary" disabled={draft.trim() === ""}>
+          <DownloadSimple size={16} aria-hidden="true" />
           Installer
         </button>
       </form>
@@ -275,6 +287,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
           disabled={checking}
           onClick={() => void refreshAll(true)}
         >
+          <ArrowClockwise size={15} aria-hidden="true" />
           Vérifier maintenant
         </button>
       </div>

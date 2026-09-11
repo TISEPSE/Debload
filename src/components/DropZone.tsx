@@ -1,4 +1,4 @@
-import { TrayArrowDown } from "@phosphor-icons/react";
+import { FolderOpen, TrayArrowDown } from "@phosphor-icons/react";
 
 interface DropZoneProps {
   /** Vrai quand un fichier survole la fenêtre. */
@@ -35,6 +35,7 @@ export function DropZone({ active, onBrowse }: DropZoneProps) {
       )}
 
       <button type="button" className="btn btn-secondary" onClick={onBrowse}>
+        <FolderOpen size={16} aria-hidden="true" />
         Parcourir…
       </button>
     </div>

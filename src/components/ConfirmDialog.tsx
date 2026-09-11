@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Trash, X } from "@phosphor-icons/react";
 
 interface ConfirmDialogProps {
   packageName: string;
@@ -69,6 +70,7 @@ export function ConfirmDialog({
 
         <div className="dialog-actions">
           <button ref={cancelRef} type="button" className="btn btn-secondary" onClick={onCancel}>
+            <X size={16} aria-hidden="true" />
             Annuler
           </button>
           <button
@@ -76,6 +78,7 @@ export function ConfirmDialog({
             className="btn btn-danger"
             onClick={() => onConfirm(purge)}
           >
+            <Trash size={16} aria-hidden="true" />
             Confirmer
           </button>
         </div>

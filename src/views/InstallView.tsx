@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
+import { ArrowCounterClockwise, ArrowSquareOut, Plus } from "@phosphor-icons/react";
 
 import { DropZone } from "../components/DropZone";
 import { LogPanel } from "../components/LogPanel";
@@ -150,9 +151,11 @@ export function InstallView({ onInstalled }: InstallViewProps) {
             {state.launchable ? (
               <>
                 <button type="button" className="btn btn-primary" onClick={launch}>
+                  <ArrowSquareOut size={16} aria-hidden="true" />
                   Ouvrir l'application
                 </button>
                 <button type="button" className="btn btn-secondary" onClick={reset}>
+                  <Plus size={16} aria-hidden="true" />
                   Installer un autre paquet
                 </button>
               </>
@@ -160,6 +163,7 @@ export function InstallView({ onInstalled }: InstallViewProps) {
               // Un paquet en ligne de commande n'a rien à ouvrir : inutile
               // d'afficher un bouton qui ne mènerait nulle part.
               <button type="button" className="btn btn-primary" onClick={reset}>
+                <Plus size={16} aria-hidden="true" />
                 Installer un autre paquet
               </button>
             )}
@@ -178,6 +182,7 @@ export function InstallView({ onInstalled }: InstallViewProps) {
             </details>
           )}
           <button type="button" className="btn btn-secondary" onClick={reset}>
+            <ArrowCounterClockwise size={16} aria-hidden="true" />
             Recommencer
           </button>
         </section>

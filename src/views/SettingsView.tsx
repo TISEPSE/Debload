@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { Broom, Check } from "@phosphor-icons/react";
 
 import { clearCaches, formatError } from "../lib/api";
 import { PLATFORMS } from "../lib/platforms";
@@ -202,6 +203,7 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
           disabled={busy}
           onClick={() => void emptyCaches()}
         >
+          {cleared ? <Check size={16} aria-hidden="true" /> : <Broom size={16} aria-hidden="true" />}
           {cleared ? "Caches vidés" : "Vider les caches"}
         </button>
       </section>

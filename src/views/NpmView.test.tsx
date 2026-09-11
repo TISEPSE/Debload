@@ -75,12 +75,14 @@ describe("NpmView", () => {
 
   it("cherche au registre, puis installe", async () => {
     npmSearch.mockResolvedValue({
-      hits: [{ name: "pnpm", version: "10.0.0", description: "Fast, disk space efficient" }],
+      hits: [
+        { name: "pnpm", version: "10.0.0", description: "Fast, disk space efficient", owner: "pnpm" },
+      ],
       total: 1,
     });
     npmInstall.mockResolvedValue({ name: "pnpm", installed: "10.0.0" });
 
-    render(<NpmView />);
+    const { container } = render(<NpmView />);
     await screen.findByText("typescript");
 
     fireEvent.change(screen.getByLabelText(/chercher un paquet npm/i), {
@@ -89,8 +91,10 @@ describe("NpmView", () => {
 
     expect(await screen.findByText("pnpm")).toBeTruthy();
     expect(npmSearch).toHaveBeenCalledWith("pnp", 0);
+    // Les résultats aussi sont des cartes, avec le logo du projet.
+    expect(container.querySelector('.npm-grid img[src*="/pnpm?"]')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /^installer$/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Installer pnpm" }));
     await waitFor(() => expect(npmInstall).toHaveBeenCalledWith("pnpm"));
   });
 
@@ -136,15 +140,17 @@ describe("NpmView", () => {
   it("parcourt les outils du registre sans rien taper", async () => {
     npmBrowse.mockImplementation(async (from: number) =>
       from === 0
-        ? { hits: [{ name: "cowsay", version: "14.1.1", description: null }], total: 2 }
-        : { hits: [{ name: "qrcode-terminal", version: "1.2.2", description: null }], total: 2 },
+        ? { hits: [{ name: "cowsay", version: "14.1.1", description: null, owner: "piuccio" }], total: 2 }
+        : { hits: [{ name: "qrcode-terminal", version: "1.2.2", description: null, owner: null }], total: 2 },
     );
 
-    render(<NpmView />);
+    const { container } = render(<NpmView />);
 
     expect(await screen.findByRole("heading", { name: /tous les outils npm/i })).toBeTruthy();
     expect(await screen.findByText("cowsay")).toBeTruthy();
     expect(npmBrowse).toHaveBeenCalledWith(0);
+    // En grille de cartes, pas en lignes pleine largeur : il y en a des milliers.
+    expect(container.querySelector('.npm-grid img[src*="/piuccio?"]')).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /afficher plus/i }));
     expect(await screen.findByText("qrcode-terminal")).toBeTruthy();
@@ -199,6 +205,13 @@ describe("NpmView", () => {
     expect(screen.getByRole("button", { name: "Installer pnpm" })).toBeTruthy();
     // Déjà installé par Debload : inutile de le suggérer.
     expect(screen.queryByRole("button", { name: "Installer typescript" })).toBeNull();
+  });
+
+  it("donne leur logo aux paquets installés quand on le connaît", async () => {
+    const { container } = render(<NpmView />);
+    await screen.findByText("typescript");
+    // typescript figure dans les suggestions, qui savent qu'il vient de Microsoft.
+    expect(container.querySelector('.packages img[src*="/microsoft?"]')).not.toBeNull();
   });
 
   it("installe une suggestion d'un clic", async () => {

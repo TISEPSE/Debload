@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ArrowRight } from "@phosphor-icons/react";
 
 import { PLATFORMS } from "../lib/platforms";
 import type { Platform, Settings } from "../lib/types";
@@ -73,6 +74,7 @@ export function IntroView({ settings, detected, onConfirm, busy, error }: IntroV
           onClick={() => onConfirm({ ...settings, platform: choice })}
         >
           {busy ? "Enregistrement…" : "Commencer"}
+          <ArrowRight size={16} aria-hidden="true" />
         </button>
         <p className="intro__note">Ce choix reste modifiable dans « Paramètres ».</p>
       </div>

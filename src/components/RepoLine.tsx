@@ -1,5 +1,13 @@
 import { useEffect, useState } from "react";
-import { Info } from "@phosphor-icons/react";
+import {
+  ArrowClockwise,
+  DownloadSimple,
+  Info,
+  ListBullets,
+  MinusCircle,
+  Trash,
+  X,
+} from "@phosphor-icons/react";
 import { Avatar } from "./Avatar";
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
@@ -192,6 +200,13 @@ export function RepoLine({
           disabled={!hasAssets}
           onClick={() => (severalAssets ? setChoosing((open) => !open) : onInstall(null))}
         >
+          {severalAssets ? (
+            <ListBullets size={16} aria-hidden="true" />
+          ) : ready?.updateAvailable ? (
+            <ArrowClockwise size={16} aria-hidden="true" />
+          ) : (
+            <DownloadSimple size={16} aria-hidden="true" />
+          )}
           {severalAssets ? "Choisir…" : actionLabel()}
         </button>
       );
@@ -204,6 +219,7 @@ export function RepoLine({
           className="btn btn-primary"
           onClick={() => onInstall(job.assetName)}
         >
+          <ArrowClockwise size={16} aria-hidden="true" />
           Réessayer
         </button>
       );
@@ -213,6 +229,7 @@ export function RepoLine({
 
     return (
       <button type="button" className="btn btn-secondary" onClick={onCancel}>
+        <X size={16} aria-hidden="true" />
         Retirer de la file
       </button>
     );
@@ -271,6 +288,7 @@ export function RepoLine({
                     onInstall(asset.name);
                   }}
                 >
+                  <DownloadSimple size={15} aria-hidden="true" />
                   {asset.name}
                 </button>
               </li>
@@ -301,6 +319,7 @@ export function RepoLine({
             onClick={onUninstall}
             aria-describedby={uninstallBlocked ? hintId : undefined}
           >
+            <Trash size={16} aria-hidden="true" />
             {removing ? "Suppression…" : "Désinstaller"}
           </button>
         )}
@@ -313,6 +332,7 @@ export function RepoLine({
             onClick={onForget}
             title="Retirer ce dépôt de la liste, sans toucher au système"
           >
+            <MinusCircle size={16} aria-hidden="true" />
             Retirer
           </button>
         )}

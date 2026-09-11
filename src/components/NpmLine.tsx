@@ -1,5 +1,6 @@
-import { Package } from "@phosphor-icons/react";
+import { ArrowClockwise, DownloadSimple, Trash } from "@phosphor-icons/react";
 
+import { Avatar } from "./Avatar";
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
 import { StatusLine } from "./StatusLine";
@@ -9,6 +10,8 @@ export interface NpmLineProps {
   name: string;
   /** Description publiée au registre, quand on la connaît. */
   description?: string | null;
+  /** Le compte GitHub d'où vient le code, dont l'avatar sert de logo. */
+  owner?: string | null;
   /** Version installée par Debload, ou `null` s'il n'a rien posé. */
   installed: string | null;
   /** Dernière version publiée, ou `null` tant que le registre n'a pas répondu. */
@@ -22,12 +25,12 @@ export interface NpmLineProps {
   /** Le dernier échec de la ligne, avec ce que npm en a dit. */
   failure: { message: string; logs: LogLine[] } | null;
   onInstall: () => void;
-  /** Absent sur un résultat de recherche : on ne retire que ce qui est installé. */
+  /** Absent quand il n'y a rien à retirer. */
   onUninstall?: () => void;
 }
 
 /**
- * Un paquet npm, trouvé au registre ou déjà installé.
+ * Un paquet npm installé par Debload.
  *
  * Même grammaire qu'une ligne de « Dépôts » : ce que la ligne annonce, puis le
  * geste qui lui reste à faire (installer, mettre à jour, ou retirer).
@@ -35,6 +38,7 @@ export interface NpmLineProps {
 export function NpmLine({
   name,
   description,
+  owner = null,
   installed,
   latest,
   prefix,
@@ -73,9 +77,7 @@ export function NpmLine({
 
   return (
     <li className="packages__item repo">
-      <span className="avatar" aria-hidden="true">
-        <Package size={19} />
-      </span>
+      <Avatar owner={owner} />
 
       <div className="packages__info">
         <div className="packages__heading">
@@ -112,6 +114,11 @@ export function NpmLine({
               disabled={disabled}
               onClick={onInstall}
             >
+              {installed === null ? (
+                <DownloadSimple size={16} aria-hidden="true" />
+              ) : (
+                <ArrowClockwise size={16} aria-hidden="true" />
+              )}
               {installed === null ? "Installer" : "Mettre à jour"}
             </button>
           )}
@@ -123,6 +130,7 @@ export function NpmLine({
               disabled={disabled}
               onClick={onUninstall}
             >
+              <Trash size={16} aria-hidden="true" />
               Désinstaller
             </button>
           )}

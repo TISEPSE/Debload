@@ -26,6 +26,18 @@ describe("suggestions npm", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it("donne à chaque paquet le compte GitHub dont l'avatar sert de logo", () => {
+    for (const { name, owner } of all) {
+      expect(owner, name).toMatch(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/);
+    }
+  });
+
+  it("illustre chaque catégorie d'une icône", () => {
+    for (const group of NPM_SUGGESTIONS) {
+      expect(group.icon, group.title).toBeTruthy();
+    }
+  });
+
   it("dit pour chaque paquet la commande qu'il pose et à quoi il sert", () => {
     for (const { command, description } of all) {
       expect(command).not.toBe("");

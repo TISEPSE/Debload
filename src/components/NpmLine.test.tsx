@@ -48,6 +48,11 @@ describe("NpmLine", () => {
     expect(onUninstall).toHaveBeenCalled();
   });
 
+  it("affiche le logo du projet quand on connaît son compte GitHub", () => {
+    const { container } = render(<NpmLine {...props({ owner: "microsoft" })} />);
+    expect(container.querySelector("img")!.getAttribute("src")).toContain("/microsoft?");
+  });
+
   it("écrit où le paquet est installé", () => {
     render(
       <NpmLine

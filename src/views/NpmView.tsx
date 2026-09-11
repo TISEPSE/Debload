@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { Warning } from "@phosphor-icons/react";
+import {
+  CaretDown,
+  CheckCircle,
+  Compass,
+  Lightbulb,
+  MagnifyingGlass,
+  Warning,
+} from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { NpmCard } from "../components/NpmCard";
 import { NpmLine } from "../components/NpmLine";
-import { NpmSuggestionCard } from "../components/NpmSuggestionCard";
-import { NPM_SUGGESTIONS } from "../lib/npmSuggestions";
 import { SkeletonRows } from "../components/SkeletonRows";
 import {
   formatError,
@@ -16,6 +22,7 @@ import {
   npmStatus,
   npmUninstall,
 } from "../lib/api";
+import { NPM_SUGGESTIONS } from "../lib/npmSuggestions";
 import type { LogLine, NpmHit, NpmStatus } from "../lib/types";
 
 /** Temps sans frappe avant d'interroger le registre. */
@@ -32,11 +39,29 @@ interface Failure {
 }
 
 /**
+ * Ajoute une page à la suite, sans doublon : d'une page à l'autre, le
+ * classement du registre peut bouger, et un même paquet revenir.
+ */
+function appendNew(previous: NpmHit[], page: NpmHit[]): NpmHit[] {
+  const seen = new Set(previous.map((hit) => hit.name));
+  return [...previous, ...page.filter((hit) => !seen.has(hit.name))];
+}
+
+/** Le libellé de « Afficher plus », avec ce qu'il reste à charger. */
+function moreLabel(remaining: number): string {
+  return `Afficher plus (${remaining.toLocaleString("fr-FR")} ${
+    remaining > 1 ? "restants" : "restant"
+  })`;
+}
+
+/**
  * Les paquets npm globaux.
  *
- * Deux listes : ce que le registre répond à la recherche, et ce que Debload a
- * déjà installé. Une seule opération à la fois — npm verrouille son dossier
- * global, et deux installations lancées ensemble se marcheraient dessus.
+ * En haut, ce que Debload a installé, en lignes, avec de quoi le mettre à jour
+ * ou le retirer. Dessous, en cartes : des suggestions et tous les outils du
+ * registre quand on ne cherche rien, ce que le registre répond sinon. Une
+ * seule opération à la fois : npm verrouille son dossier global, et deux
+ * installations lancées ensemble se marcheraient dessus.
  */
 export function NpmView() {
   const [status, setStatus] = useState<NpmStatus | null>(null);
@@ -50,11 +75,14 @@ export function NpmView() {
   const [searching, setSearching] = useState(false);
   /** Nombre de résultats que le registre annonce pour la recherche en cours. */
   const [total, setTotal] = useState(0);
+  /** Rang du prochain résultat à demander. */
+  const [searchNext, setSearchNext] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
 
   /** Les outils du registre, parcourus sans recherche, page après page. */
   const [browsed, setBrowsed] = useState<NpmHit[]>([]);
   const [browseTotal, setBrowseTotal] = useState(0);
+  const [browseNext, setBrowseNext] = useState(0);
   const [browsing, setBrowsing] = useState(true);
 
   const [busy, setBusy] = useState<Busy | null>(null);
@@ -114,7 +142,8 @@ export function NpmView() {
       npmSearch(text, 0).then(
         (page) => {
           if (cancelled) return;
-          setHits(page.hits);
+          setHits(appendNew([], page.hits));
+          setSearchNext(page.hits.length);
           setTotal(page.total);
           setSearchError(null);
           setSearching(false);
@@ -137,22 +166,24 @@ export function NpmView() {
   const loadMore = useCallback(async () => {
     setLoadingMore(true);
     try {
-      const page = await npmSearch(query.trim(), hits.length);
-      setHits((previous) => [...previous, ...page.hits]);
+      const page = await npmSearch(query.trim(), searchNext);
+      setHits((previous) => appendNew(previous, page.hits));
+      setSearchNext(searchNext + page.hits.length);
       setTotal(page.total);
     } catch (error) {
       setSearchError(formatError(error));
     } finally {
       setLoadingMore(false);
     }
-  }, [query, hits.length]);
+  }, [query, searchNext]);
 
   /** Charge une page des outils du registre, à la suite des précédentes. */
   const browseMore = useCallback(async (from: number) => {
     setBrowsing(true);
     try {
       const page = await npmBrowse(from);
-      setBrowsed((previous) => (from === 0 ? page.hits : [...previous, ...page.hits]));
+      setBrowsed((previous) => appendNew(from === 0 ? [] : previous, page.hits));
+      setBrowseNext(from + page.hits.length);
       setBrowseTotal(page.total);
     } catch (error) {
       setSearchError(formatError(error));
@@ -197,27 +228,38 @@ export function NpmView() {
 
   const installedPackage = (name: string) => status?.packages.find((pkg) => pkg.name === name);
 
-  const line = (
-    name: string,
-    description: string | null,
-    published: string | null,
-    removable: boolean,
-  ) => (
-    <NpmLine
-      key={name}
-      name={name}
-      description={description}
-      installed={installedPackage(name)?.installed ?? null}
-      prefix={installedPackage(name)?.prefix}
-      latest={latest[name] ?? published}
-      busy={busy?.name === name ? busy.kind : null}
-      disabled={busy !== null}
-      failure={failures[name] ?? null}
-      onInstall={() => void run(name, "installing")}
-      // Un résultat de recherche ne se retire pas d'ici : on ne retire que ce
-      // qui figure dans la liste de ce que Debload a installé.
-      onUninstall={removable ? () => setPending(name) : undefined}
-    />
+  /**
+   * Le compte GitHub de chaque paquet dont on le sait : les suggestions le
+   * connaissent d'avance, le registre le donne avec ses réponses. C'est ce
+   * qui donne un logo aux paquets installés, que `npm ls` ne décrit pas.
+   */
+  const owners = useMemo(() => {
+    const known = new Map<string, string>();
+    for (const hit of [...browsed, ...hits]) {
+      if (hit.owner) known.set(hit.name, hit.owner);
+    }
+    for (const group of NPM_SUGGESTIONS) {
+      for (const item of group.items) known.set(item.name, item.owner);
+    }
+    return known;
+  }, [browsed, hits]);
+
+  const idle = query.trim().length < 2;
+
+  const card = (hit: NpmHit) => (
+    <li key={hit.name}>
+      <NpmCard
+        name={hit.name}
+        description={hit.description}
+        owner={hit.owner ?? owners.get(hit.name) ?? null}
+        version={hit.version}
+        installed={installedPackage(hit.name)?.installed ?? null}
+        busy={busy?.name === hit.name}
+        disabled={busy !== null}
+        failure={failures[hit.name] ?? null}
+        onInstall={() => void run(hit.name, "installing")}
+      />
+    </li>
   );
 
   // La recherche ne dépend pas de la liste installée : elle s'affiche aussitôt,
@@ -225,14 +267,17 @@ export function NpmView() {
   return (
     <div className="view">
       <form className="repo-add" role="search" onSubmit={(event) => event.preventDefault()}>
-        <input
-          type="search"
-          className="input repo-add__field"
-          placeholder="Chercher un paquet npm : typescript, pnpm…"
-          aria-label="Chercher un paquet npm"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <span className="input-icon">
+          <MagnifyingGlass size={18} className="input-icon__glyph" aria-hidden="true" />
+          <input
+            type="search"
+            className="input repo-add__field"
+            placeholder="Chercher un paquet npm : typescript, pnpm…"
+            aria-label="Chercher un paquet npm"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </span>
       </form>
 
       {loadError && <p className="result result--error">{loadError}</p>}
@@ -253,24 +298,67 @@ export function NpmView() {
             </p>
           )}
 
+          {/* Ce qu'on a déjà, en premier : la liste du registre, elle, s'allonge
+              à chaque « Afficher plus ». Rien à montrer tant que c'est vide. */}
+          {(status === null || status.packages.length > 0) && (
+            <section>
+              <h2 className="npm__heading">
+                <CheckCircle size={15} aria-hidden="true" />
+                Installés par Debload
+              </h2>
+              {status === null ? (
+                <SkeletonRows label="Lecture des paquets npm…" count={2} />
+              ) : (
+                <ul className="packages">
+                  {status.packages.map((pkg) => (
+                    <NpmLine
+                      key={pkg.name}
+                      name={pkg.name}
+                      owner={owners.get(pkg.name) ?? null}
+                      installed={pkg.installed}
+                      prefix={pkg.prefix}
+                      latest={latest[pkg.name] ?? null}
+                      busy={busy?.name === pkg.name ? busy.kind : null}
+                      disabled={busy !== null}
+                      failure={failures[pkg.name] ?? null}
+                      onInstall={() => void run(pkg.name, "installing")}
+                      onUninstall={() => setPending(pkg.name)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
           {searchError && <p className="result result--error">{searchError}</p>}
 
           {/* Quand on ne cherche rien, des outils utiles à portée de clic. Ce
               que Debload a déjà installé n'y figure plus. */}
-          {query.trim().length < 2 && status !== null && (
+          {idle && status !== null && (
             <section>
-              <h2 className="npm__heading">Suggestions</h2>
+              <h2 className="npm__heading">
+                <Lightbulb size={15} aria-hidden="true" />
+                Suggestions
+              </h2>
               {NPM_SUGGESTIONS.map((group) => {
                 const items = group.items.filter((item) => !installedPackage(item.name));
                 if (items.length === 0) return null;
+                const GroupIcon = group.icon;
                 return (
                   <div key={group.title} className="suggestions__group">
-                    <h3 className="suggestions__title">{group.title}</h3>
-                    <ul className="suggestions__grid">
+                    <h3 className="suggestions__title">
+                      <GroupIcon size={16} aria-hidden="true" />
+                      {group.title}
+                    </h3>
+                    <ul className="npm-grid">
                       {items.map((item) => (
                         <li key={item.name}>
-                          <NpmSuggestionCard
-                            suggestion={item}
+                          <NpmCard
+                            name={item.name}
+                            command={item.command}
+                            description={item.description}
+                            owner={item.owner}
+                            installed={null}
                             busy={busy?.name === item.name}
                             disabled={busy !== null}
                             failure={failures[item.name] ?? null}
@@ -287,28 +375,26 @@ export function NpmView() {
 
           {/* Sans recherche, tout le registre des outils, les plus utilisés
               d'abord, à charger autant qu'on veut. */}
-          {query.trim().length < 2 && status !== null && (
+          {idle && status !== null && (
             <section>
-              <h2 className="npm__heading">Tous les outils npm</h2>
+              <h2 className="npm__heading">
+                <Compass size={15} aria-hidden="true" />
+                Tous les outils npm
+              </h2>
               {browsed.length === 0 && browsing ? (
-                <SkeletonRows label="Lecture du registre npm…" count={3} />
+                <SkeletonRows label="Lecture du registre npm…" count={8} layout="cards" />
               ) : (
                 <>
-                  <ul className="packages">
-                    {browsed.map((hit) => line(hit.name, hit.description, hit.version, false))}
-                  </ul>
-                  {browsed.length < browseTotal && (
+                  <ul className="npm-grid">{browsed.map(card)}</ul>
+                  {browseNext < browseTotal && (
                     <button
                       type="button"
                       className="btn btn-secondary npm__more"
                       disabled={browsing}
-                      onClick={() => void browseMore(browsed.length)}
+                      onClick={() => void browseMore(browseNext)}
                     >
-                      {browsing
-                        ? "Chargement…"
-                        : `Afficher plus (${(browseTotal - browsed.length).toLocaleString("fr-FR")} ${
-                            browseTotal - browsed.length > 1 ? "restants" : "restant"
-                          })`}
+                      <CaretDown size={16} aria-hidden="true" />
+                      {browsing ? "Chargement…" : moreLabel(browseTotal - browseNext)}
                     </button>
                   )}
                 </>
@@ -318,47 +404,32 @@ export function NpmView() {
 
           {(searching || hits.length > 0) && (
             <section>
-              <h2 className="npm__heading">Registre npm</h2>
+              <h2 className="npm__heading">
+                <MagnifyingGlass size={15} aria-hidden="true" />
+                Registre npm
+              </h2>
               {searching ? (
-                <SkeletonRows label="Recherche dans le registre npm…" count={3} />
+                <SkeletonRows label="Recherche dans le registre npm…" count={8} layout="cards" />
               ) : (
                 <>
-                  <ul className="packages">
-                    {hits.map((hit) => line(hit.name, hit.description, hit.version, false))}
-                  </ul>
+                  <ul className="npm-grid">{hits.map(card)}</ul>
                   {/* Le registre en a davantage : la suite se charge à la demande,
                       autant de fois qu'on veut. */}
-                  {hits.length < total && (
+                  {searchNext < total && (
                     <button
                       type="button"
                       className="btn btn-secondary npm__more"
                       disabled={loadingMore}
                       onClick={() => void loadMore()}
                     >
-                      {loadingMore
-                        ? "Chargement…"
-                        : `Afficher plus (${(total - hits.length).toLocaleString("fr-FR")} ${
-                            total - hits.length > 1 ? "restants" : "restant"
-                          })`}
+                      <CaretDown size={16} aria-hidden="true" />
+                      {loadingMore ? "Chargement…" : moreLabel(total - searchNext)}
                     </button>
                   )}
                 </>
               )}
             </section>
           )}
-
-          <section>
-            <h2 className="npm__heading">Installés par Debload</h2>
-            {status === null ? (
-              <SkeletonRows label="Lecture des paquets npm…" count={2} />
-            ) : status.packages.length === 0 ? (
-              <p className="empty">Aucun paquet npm pour l'instant. Cherche-en un ci-dessus.</p>
-            ) : (
-              <ul className="packages">
-                {status.packages.map((pkg) => line(pkg.name, null, null, true))}
-              </ul>
-            )}
-          </section>
         </>
       )}
 

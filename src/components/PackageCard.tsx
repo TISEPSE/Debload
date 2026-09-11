@@ -1,4 +1,4 @@
-import { ShieldCheck } from "@phosphor-icons/react";
+import { DownloadSimple, ShieldCheck, X } from "@phosphor-icons/react";
 
 import type { DebInfo } from "../lib/types";
 
@@ -65,6 +65,7 @@ export function PackageCard({ info, busy, onConfirm, onCancel }: PackageCardProp
 
       <footer className="card__actions">
         <button type="button" className="btn btn-secondary" onClick={onCancel}>
+          <X size={16} aria-hidden="true" />
           Annuler
         </button>
         <button
@@ -73,6 +74,7 @@ export function PackageCard({ info, busy, onConfirm, onCancel }: PackageCardProp
           onClick={onConfirm}
           disabled={busy}
         >
+          <DownloadSimple size={16} aria-hidden="true" />
           {busy ? "Installation en cours…" : `Installer ${info.package}`}
         </button>
       </footer>

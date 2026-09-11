@@ -397,13 +397,27 @@ pub struct NpmHit {
     pub name: String,
     pub version: String,
     pub description: Option<String>,
+    /// Le compte GitHub d'où vient le code, quand le registre le dit :
+    /// l'interface affiche son avatar en guise de logo.
+    pub owner: Option<String>,
 }
 
 /// Décode la réponse de `/-/v1/search`.
 pub fn parse_search(json: &str) -> Result<Vec<NpmHit>, DebloadError> {
     #[derive(Deserialize)]
+    struct Links {
+        repository: Option<String>,
+    }
+    #[derive(Deserialize)]
+    struct Package {
+        name: String,
+        version: String,
+        description: Option<String>,
+        links: Option<Links>,
+    }
+    #[derive(Deserialize)]
     struct Object {
-        package: NpmHit,
+        package: Package,
     }
     #[derive(Deserialize)]
     struct Response {
@@ -412,7 +426,52 @@ pub fn parse_search(json: &str) -> Result<Vec<NpmHit>, DebloadError> {
 
     let response: Response = serde_json::from_str(json)
         .map_err(|e| DebloadError::NpmRegistryFailed(format!("réponse illisible : {e}")))?;
-    Ok(response.objects.into_iter().map(|o| o.package).collect())
+    Ok(response
+        .objects
+        .into_iter()
+        .map(|Object { package }| {
+            let owner = package
+                .links
+                .and_then(|links| links.repository)
+                .and_then(|url| github_owner(&url));
+            NpmHit {
+                name: package.name,
+                version: package.version,
+                description: package.description,
+                owner,
+            }
+        })
+        .collect())
+}
+
+/// Le compte propriétaire d'un dépôt GitHub, lu dans l'adresse que publie le
+/// registre.
+///
+/// Les formes varient d'un paquet à l'autre (`git+https://`, `git://`,
+/// `git@github.com:`, `github:`), d'où la lecture souple. Le nom rendu ne
+/// garde que ce que GitHub autorise pour un compte : il finit dans l'adresse
+/// d'une image.
+pub fn github_owner(url: &str) -> Option<String> {
+    let rest = match url.strip_prefix("github:") {
+        Some(rest) => rest,
+        None => {
+            let start = url.find("github.com")?;
+            // « notgithub.com » n'est pas GitHub : l'hôte suit un séparateur,
+            // ou « www. ».
+            let before = url[..start].chars().next_back();
+            if !matches!(before, None | Some('/' | '@' | '.')) {
+                return None;
+            }
+            url[start + "github.com".len()..].strip_prefix(['/', ':'])?
+        }
+    };
+
+    let owner = rest.split('/').next()?;
+    let valid = !owner.is_empty()
+        && owner.len() <= 39
+        && !owner.starts_with('-')
+        && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+    valid.then(|| owner.to_string())
 }
 
 /// Décode le manifeste de `/<nom>/latest`, pour n'en garder que la version.
@@ -957,6 +1016,40 @@ mod tests {
         assert_eq!(hits.len(), 3);
         assert!(hits.iter().any(|h| h.name == "typescript"));
         assert!(hits.iter().all(|h| !h.version.is_empty()));
+        // Le lien du dépôt donne le compte qui publie : l'interface en tire le logo.
+        let typescript = hits.iter().find(|h| h.name == "typescript").unwrap();
+        assert_eq!(typescript.owner.as_deref(), Some("microsoft"));
+    }
+
+    #[test]
+    fn finds_the_github_owner_whatever_the_form_of_the_address() {
+        for (url, owner) in [
+            ("git+https://github.com/microsoft/TypeScript.git", "microsoft"),
+            ("https://github.com/pnpm/pnpm", "pnpm"),
+            ("git://github.com/http-party/http-server.git", "http-party"),
+            ("git+ssh://git@github.com/mermaid-js/mermaid-cli.git", "mermaid-js"),
+            ("git@github.com:Unitech/pm2.git", "Unitech"),
+            ("https://www.github.com/GoogleChrome/lighthouse", "GoogleChrome"),
+            ("github:sindresorhus/np", "sindresorhus"),
+        ] {
+            assert_eq!(github_owner(url).as_deref(), Some(owner), "{url}");
+        }
+    }
+
+    #[test]
+    fn no_owner_outside_github_or_with_a_name_github_would_refuse() {
+        for url in [
+            "",
+            "https://gitlab.com/a/b",
+            "https://github.com.evil.example/a/b",
+            "https://notgithub.com/a/b",
+            "https://github.com/",
+            "https://github.com/a%2F..%2Fb/c",
+            "https://github.com/-a/b",
+            "https://github.com/a_b/c",
+        ] {
+            assert_eq!(github_owner(url), None, "{url}");
+        }
     }
 
     #[test]

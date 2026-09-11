@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { GearSix, GithubLogo, Package, TrayArrowDown, type Icon } from "@phosphor-icons/react";
 
 import { formatError, getEnvironment, saveSettings } from "./lib/api";
 import { platformInfo } from "./lib/platforms";
@@ -17,15 +18,16 @@ interface TabInfo {
   id: Tab;
   /** Ce que l'onglet exige du système pour avoir un sens. */
   needs: "apt" | null;
+  icon: Icon;
 }
 
 const TABS: TabInfo[] = [
   // Déposer un .deb n'a de sens que là où apt saurait l'installer.
-  { id: "install", needs: "apt" },
-  { id: "repos", needs: null },
+  { id: "install", needs: "apt", icon: TrayArrowDown },
+  { id: "repos", needs: null, icon: GithubLogo },
   // Présent partout : sans npm, l'onglet dit ce qui manque.
-  { id: "npm", needs: null },
-  { id: "settings", needs: null },
+  { id: "npm", needs: null, icon: Package },
+  { id: "settings", needs: null, icon: GearSix },
 ];
 
 /** Vrai si cet onglet a quelque chose à montrer sur ce système. */
@@ -160,6 +162,7 @@ export default function App() {
               className={`tabs__tab${tab === info.id ? " tabs__tab--active" : ""}`}
               onClick={() => setTab(info.id)}
             >
+              <info.icon size={18} aria-hidden="true" />
               {tabLabel(info)}
               {/* Un point sur « Dépôts » dit que la file avance ailleurs. */}
               {info.id === "repos" && busy && tab !== "repos" && (

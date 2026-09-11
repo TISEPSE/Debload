@@ -113,6 +113,8 @@ export interface NpmHit {
   name: string;
   version: string;
   description: string | null;
+  /** Le compte GitHub d'où vient le code, dont l'avatar sert de logo. */
+  owner: string | null;
 }
 
 /** Famille de système, telle que l'utilisateur l'a confirmée à l'accueil. */

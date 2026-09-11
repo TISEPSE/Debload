@@ -24,6 +24,12 @@ describe("Avatar", () => {
     expect(container.querySelector("svg")).not.toBeNull();
   });
 
+  it("montre directement l'icône quand aucun compte n'est connu", () => {
+    const { container } = render(<Avatar owner={null} />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("svg")).not.toBeNull();
+  });
+
   it("encode un propriétaire inattendu", () => {
     expect(avatarUrl("a b")).toBe("https://avatars.githubusercontent.com/a%20b?s=76");
   });

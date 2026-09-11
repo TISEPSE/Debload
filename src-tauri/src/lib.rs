@@ -31,6 +31,8 @@ use runner::RealRunner;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Ouvre la page GitHub d'un dépôt ; la capacité le borne à github.com.
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let cache_dir = app.path().app_cache_dir()?;

@@ -1054,6 +1054,21 @@
 
 /* --- Cartes de dépôts ---------------------------------------------------- */
 
+/* « Voir sur GitHub », dans le coin de la carte : toujours au même endroit,
+   quel que soit l'état du dépôt. */
+.tile__open {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  margin-left: auto;
+  padding-inline: 0;
+  color: var(--color-text-3);
+}
+
+.tile__open:hover:not(:disabled) {
+  color: var(--color-accent);
+}
+
 /* Le verdict d'une carte, et ce qui s'y ajoute pendant une installation. */
 .tile__status {
   margin: 0;

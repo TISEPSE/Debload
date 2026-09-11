@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type {
   DebInfo,
   DebloadError,
@@ -44,6 +45,17 @@ export const refreshRepo = (slug: string, force = false) =>
 export const addRepo = (input: string) => invoke<string>("add_repo", { input });
 
 export const removeRepo = (slug: string) => invoke<void>("remove_repo", { slug });
+
+/** La page GitHub d'un dépôt. Chaque morceau est échappé : il vient du catalogue. */
+export const repoPageUrl = (owner: string, repo: string) =>
+  `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+
+/**
+ * Ouvre la page GitHub d'un dépôt dans le navigateur. La capacité de la
+ * fenêtre n'autorise que des adresses GitHub : rien d'autre ne peut s'ouvrir.
+ */
+export const openRepoPage = (owner: string, repo: string) =>
+  openUrl(repoPageUrl(owner, repo));
 
 export const prepareFromRepo = (slug: string, assetName: string | null) =>
   invoke<DebInfo>("prepare_from_repo", { slug, assetName });

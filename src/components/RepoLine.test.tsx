@@ -4,6 +4,9 @@ import { RepoLine, sinceLabel, type ReleaseState } from "./RepoLine";
 import type { Job, JobState } from "../lib/queue";
 import type { DebInfo, RepoRelease, RepoRow } from "../lib/types";
 
+const { openUrl } = vi.hoisted(() => ({ openUrl: vi.fn() }));
+vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl }));
+
 const row: RepoRow = {
   slug: "TISEPSE/MailFlow",
   owner: "TISEPSE",
@@ -321,6 +324,26 @@ describe("RepoLine", () => {
       "https://avatars.githubusercontent.com/TISEPSE?s=88",
     );
     expect(screen.getByText("TISEPSE/MailFlow")).toBeTruthy();
+  });
+
+  it("ouvre le dépôt sur GitHub d'un clic", () => {
+    // La description seule ne dit pas tout : le dépôt est à un clic.
+    openUrl.mockResolvedValue(undefined);
+    render(<RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />);
+    fireEvent.click(screen.getByRole("button", { name: "Voir MailFlow sur GitHub" }));
+    expect(openUrl).toHaveBeenCalledWith("https://github.com/TISEPSE/MailFlow");
+  });
+
+  it("garde le lien vers GitHub même quand la vérification échoue", () => {
+    render(
+      <RepoLine
+        row={row}
+        state={{ status: "error", message: "TISEPSE/MailFlow n'a publié aucune release." }}
+        onInstall={noop}
+        onUninstall={noop}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Voir MailFlow sur GitHub" })).toBeTruthy();
   });
 
   it("ne laisse retirer de la liste qu'un dépôt ajouté à la main", () => {

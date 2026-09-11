@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowClockwise,
+  ArrowSquareOut,
   DownloadSimple,
   GithubLogo,
   Info,
@@ -13,6 +14,7 @@ import { Avatar } from "./Avatar";
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
 import { StatusLine } from "./StatusLine";
+import { openRepoPage } from "../lib/api";
 import { ordinal, type Job, type JobState } from "../lib/queue";
 import type { ReleaseState } from "../lib/useReleases";
 import type { RepoRow } from "../lib/types";
@@ -258,6 +260,17 @@ export function RepoLine({
               </span>
             </span>
           </div>
+          {/* La description ne dit pas tout : le dépôt est à un clic. Si le
+              navigateur ne s'ouvre pas, il n'y a rien de plus à faire ici. */}
+          <button
+            type="button"
+            className="btn btn-ghost tile__open"
+            aria-label={`Voir ${row.label} sur GitHub`}
+            title="Voir sur GitHub"
+            onClick={() => void openRepoPage(row.owner, row.repo).catch(() => {})}
+          >
+            <ArrowSquareOut size={20} aria-hidden="true" />
+          </button>
         </header>
 
         {row.description && <p className="tile__description">{row.description}</p>}

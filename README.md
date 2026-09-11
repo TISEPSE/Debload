@@ -129,7 +129,7 @@ polkit, aucune entrée sudoers.
 ```bash
 npm install
 npm run tauri dev            # lancer
-npm test                     # tests frontend (260)
+npm test                     # tests frontend (262)
 cd src-tauri && cargo test   # tests backend (244)
 npm run tauri build          # produire le .deb
 ```

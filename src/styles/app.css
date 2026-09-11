@@ -1009,6 +1009,78 @@
 
 /* --- Page « npm » ------------------------------------------------------- */
 
+/* Suggestions : une grille de cartes par catégorie, qui se replie seule sur
+   une colonne quand la fenêtre rétrécit. */
+.suggestions__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.suggestions__title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--color-text-2);
+}
+
+.suggestions__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggestions__grid > li {
+  display: flex;
+}
+
+.suggestion {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+}
+
+.suggestion__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.suggestion__name {
+  font-size: 14.5px;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.suggestion__command {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.suggestion__description {
+  flex: 1;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-2);
+}
+
+.suggestion__action {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
 /* Où arrivent les commandes, et si le PATH les trouvera. */
 .npm__where {
   display: flex;

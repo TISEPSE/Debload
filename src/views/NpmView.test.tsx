@@ -129,6 +129,34 @@ describe("NpmView", () => {
     expect(await screen.findByText(/bien dans ton PATH/i)).toBeTruthy();
   });
 
+  it("propose des paquets pratiques tant que la recherche est vide", async () => {
+    render(<NpmView />);
+
+    expect(await screen.findByRole("heading", { name: /^suggestions$/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Installer pnpm" })).toBeTruthy();
+    // Déjà installé par Debload : inutile de le suggérer.
+    expect(screen.queryByRole("button", { name: "Installer typescript" })).toBeNull();
+  });
+
+  it("installe une suggestion d'un clic", async () => {
+    npmInstall.mockResolvedValue({ name: "pnpm", installed: "10.0.0", prefix: "~/.local" });
+    render(<NpmView />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Installer pnpm" }));
+    await waitFor(() => expect(npmInstall).toHaveBeenCalledWith("pnpm"));
+  });
+
+  it("range les suggestions pendant une recherche", async () => {
+    render(<NpmView />);
+    await screen.findByRole("button", { name: "Installer pnpm" });
+
+    fireEvent.change(screen.getByLabelText(/chercher un paquet npm/i), {
+      target: { value: "pnp" },
+    });
+
+    expect(screen.queryByRole("heading", { name: /^suggestions$/i })).toBeNull();
+  });
+
   it("garde la recherche sous la main pendant la lecture des paquets", () => {
     npmStatus.mockImplementation(() => new Promise(() => {}));
     render(<NpmView />);

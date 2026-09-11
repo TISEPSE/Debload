@@ -4,6 +4,8 @@ import { TerminalWindow } from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NpmLine } from "../components/NpmLine";
+import { NpmSuggestionCard } from "../components/NpmSuggestionCard";
+import { NPM_SUGGESTIONS } from "../lib/npmSuggestions";
 import { SkeletonRows } from "../components/SkeletonRows";
 import {
   formatError,
@@ -210,6 +212,36 @@ export function NpmView() {
           )}
 
           {searchError && <p className="result result--error">{searchError}</p>}
+
+          {/* Quand on ne cherche rien, des outils utiles à portée de clic. Ce
+              que Debload a déjà installé n'y figure plus. */}
+          {query.trim().length < 2 && status !== null && (
+            <section>
+              <h2 className="npm__heading">Suggestions</h2>
+              {NPM_SUGGESTIONS.map((group) => {
+                const items = group.items.filter((item) => !installedPackage(item.name));
+                if (items.length === 0) return null;
+                return (
+                  <div key={group.title} className="suggestions__group">
+                    <h3 className="suggestions__title">{group.title}</h3>
+                    <ul className="suggestions__grid">
+                      {items.map((item) => (
+                        <li key={item.name}>
+                          <NpmSuggestionCard
+                            suggestion={item}
+                            busy={busy?.name === item.name}
+                            disabled={busy !== null}
+                            failure={failures[item.name] ?? null}
+                            onInstall={() => void run(item.name, "installing")}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </section>
+          )}
 
           {(searching || hits.length > 0) && (
             <section>

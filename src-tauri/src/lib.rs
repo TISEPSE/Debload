@@ -6,6 +6,7 @@ pub mod history;
 pub mod installer;
 pub mod launch;
 pub mod npm;
+pub mod npm_commands;
 pub mod npm_store;
 pub mod pkg;
 pub mod privileged;
@@ -54,6 +55,7 @@ pub fn run() {
                 // macOS et lui seul range les applications ici ; ailleurs ce
                 // chemin ne sert à personne.
                 applications_dir: PathBuf::from("/Applications"),
+                npm_path: data_dir.join("npm.json"),
             });
             Ok(())
         })
@@ -71,7 +73,12 @@ pub fn run() {
             commands::get_environment,
             commands::save_settings,
             commands::clear_caches,
-            commands::uninstall_repo
+            commands::uninstall_repo,
+            npm_commands::npm_status,
+            npm_commands::npm_search,
+            npm_commands::npm_latest,
+            npm_commands::npm_install,
+            npm_commands::npm_uninstall
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de Debload");

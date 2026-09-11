@@ -67,7 +67,11 @@ pub fn on_path(dir: &Path, path_var: Option<&OsStr>) -> bool {
 /// existant qui compte, puisque npm le créera là.
 fn writable(prefix: &Path) -> bool {
     let modules = modules_dir(prefix);
-    let candidates = [modules.as_path(), modules.parent().unwrap_or(prefix), prefix];
+    let candidates = [
+        modules.as_path(),
+        modules.parent().unwrap_or(prefix),
+        prefix,
+    ];
     let Some(existing) = candidates.into_iter().find(|dir| dir.is_dir()) else {
         return false;
     };
@@ -407,6 +411,61 @@ pub fn parse_latest(json: &str) -> Result<String, DebloadError> {
         .map_err(|e| DebloadError::NpmRegistryFailed(format!("réponse illisible : {e}")))
 }
 
+// --- Registre ---------------------------------------------------------------
+
+/// Le seul hôte que Debload interroge pour npm. Le téléchargement des paquets,
+/// lui, reste l'affaire de npm et de sa propre configuration.
+const REGISTRY: &str = "https://registry.npmjs.org";
+
+/// L'adresse du manifeste de la dernière version. Le `/` d'un nom scopé
+/// s'échappe : sans cela, le registre y verrait un chemin.
+pub fn latest_url(name: &str) -> String {
+    format!("{REGISTRY}/{}/latest", name.replace('/', "%2f"))
+}
+
+/// Cherche au registre. Une requête de moins de deux caractères ne part pas :
+/// elle ne rendrait que du bruit.
+pub fn search(query: &str) -> Result<Vec<NpmHit>, DebloadError> {
+    let text = query.trim();
+    if text.chars().count() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let url = format!("{REGISTRY}/-/v1/search");
+    let body = crate::github::agent()
+        .get(&url)
+        .query("text", text)
+        .query("size", "10")
+        .call()
+        .and_then(|mut response| response.body_mut().read_to_string())
+        .map_err(registry_error)?;
+
+    parse_search(&body)
+}
+
+/// La dernière version publiée d'un paquet.
+pub fn latest(name: &str) -> Result<String, DebloadError> {
+    validate_npm_name(name)?;
+
+    let url = latest_url(name);
+    let body = crate::github::agent()
+        .get(&url)
+        .call()
+        .and_then(|mut response| response.body_mut().read_to_string())
+        .map_err(registry_error)?;
+
+    parse_latest(&body)
+}
+
+fn registry_error(err: ureq::Error) -> DebloadError {
+    match err {
+        ureq::Error::StatusCode(404) => {
+            DebloadError::NpmRegistryFailed("paquet introuvable".to_string())
+        }
+        other => DebloadError::NpmRegistryFailed(other.to_string()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,7 +518,10 @@ mod tests {
     #[test]
     fn a_missing_npm_is_reported_as_such() {
         let fake = FakeRunner::new();
-        fake.on(&["config", "prefix"], CommandOutput::fail(127, "npm: not found"));
+        fake.on(
+            &["config", "prefix"],
+            CommandOutput::fail(127, "npm: not found"),
+        );
 
         assert_eq!(
             resolve_prefix(&fake, Path::new("/h")).unwrap_err(),
@@ -471,7 +533,10 @@ mod tests {
     fn tells_whether_a_directory_is_on_the_path() {
         let var = std::env::join_paths(["/usr/bin", "/home/x/.local/bin"]).unwrap();
 
-        assert!(on_path(Path::new("/home/x/.local/bin"), Some(var.as_os_str())));
+        assert!(on_path(
+            Path::new("/home/x/.local/bin"),
+            Some(var.as_os_str())
+        ));
         assert!(!on_path(Path::new("/opt/bin"), Some(var.as_os_str())));
         assert!(!on_path(Path::new("/opt/bin"), None));
     }
@@ -494,9 +559,13 @@ mod tests {
         );
 
         let lines = std::sync::Mutex::new(Vec::new());
-        let installed = install(&fake, &store_path, Path::new("/h"), "typescript", &|_, line| {
-            lines.lock().unwrap().push(line.to_string())
-        })
+        let installed = install(
+            &fake,
+            &store_path,
+            Path::new("/h"),
+            "typescript",
+            &|_, line| lines.lock().unwrap().push(line.to_string()),
+        )
         .unwrap();
 
         assert_eq!(installed.installed, "7.0.2");
@@ -540,10 +609,19 @@ mod tests {
             &["config", "prefix"],
             CommandOutput::ok(&dir.path().display().to_string()),
         );
-        fake.on(&["install"], CommandOutput::fail(1, "npm error 404 Not Found\n"));
+        fake.on(
+            &["install"],
+            CommandOutput::fail(1, "npm error 404 Not Found\n"),
+        );
 
-        let err = install(&fake, &store_path, Path::new("/h"), "introuvable", &|_, _| {})
-            .unwrap_err();
+        let err = install(
+            &fake,
+            &store_path,
+            Path::new("/h"),
+            "introuvable",
+            &|_, _| {},
+        )
+        .unwrap_err();
 
         assert_eq!(
             err,
@@ -576,8 +654,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let fake = FakeRunner::new();
 
-        let err = uninstall(&fake, &dir.path().join("npm.json"), "typescript", &|_, _| {})
-            .unwrap_err();
+        let err = uninstall(
+            &fake,
+            &dir.path().join("npm.json"),
+            "typescript",
+            &|_, _| {},
+        )
+        .unwrap_err();
 
         assert!(matches!(err, DebloadError::NotManaged(_)));
         assert!(fake.calls().is_empty());
@@ -590,7 +673,10 @@ mod tests {
         seed(&store_path, &["pnpm"], "/p");
 
         let fake = FakeRunner::new();
-        fake.on(&["uninstall", "pnpm"], CommandOutput::ok("removed 1 package\n"));
+        fake.on(
+            &["uninstall", "pnpm"],
+            CommandOutput::ok("removed 1 package\n"),
+        );
 
         uninstall(&fake, &store_path, "pnpm", &|_, _| {}).unwrap();
         assert!(npm_store::load(&store_path).packages.is_empty());
@@ -658,6 +744,32 @@ mod tests {
     }
 
     #[test]
+    fn a_scoped_name_is_escaped_in_the_registry_url() {
+        assert_eq!(
+            latest_url("typescript"),
+            "https://registry.npmjs.org/typescript/latest"
+        );
+        assert_eq!(
+            latest_url("@google/gemini-cli"),
+            "https://registry.npmjs.org/@google%2fgemini-cli/latest"
+        );
+    }
+
+    #[test]
+    fn a_query_too_short_asks_nothing_of_the_registry() {
+        // Aucun réseau en test : une requête partie ferait échouer l'appel.
+        assert_eq!(search(" a ").unwrap(), vec![]);
+    }
+
+    #[test]
+    fn an_invalid_name_is_never_looked_up() {
+        assert!(matches!(
+            latest("../x"),
+            Err(DebloadError::InvalidNpmName(_))
+        ));
+    }
+
+    #[test]
     fn accepts_the_names_the_registry_publishes() {
         for name in [
             "typescript",
@@ -691,7 +803,10 @@ mod tests {
             too_long.as_str(),
         ] {
             assert!(
-                matches!(validate_npm_name(name), Err(DebloadError::InvalidNpmName(_))),
+                matches!(
+                    validate_npm_name(name),
+                    Err(DebloadError::InvalidNpmName(_))
+                ),
                 "accepté à tort : {name}"
             );
         }

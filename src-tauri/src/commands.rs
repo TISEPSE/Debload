@@ -44,6 +44,8 @@ pub struct AppState {
     pub home_dir: PathBuf,
     /// Le dossier « Applications » de macOS.
     pub applications_dir: PathBuf,
+    /// Ce que Debload a installé avec npm, et où.
+    pub npm_path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]

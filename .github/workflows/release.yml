@@ -19,8 +19,8 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     strategy:
-      # Un échec sur une plateforme ne doit pas priver de l'autre : on veut
-      # voir les deux résultats.
+      # Un échec sur une plateforme ne doit pas priver des autres : on veut
+      # voir tous les résultats.
       fail-fast: false
       matrix:
         include:
@@ -30,9 +30,17 @@ jobs:
           - os: ubuntu-24.04
             label: Linux (.deb et AppImage)
             args: '--bundles deb,appimage'
+            targets: ''
           - os: windows-latest
             label: Windows (.msi et .exe)
             args: '--bundles msi,nsis'
+            targets: ''
+          # Un seul binaire pour les Mac Intel et Apple Silicon : il faut les
+          # deux cibles Rust pour l'assembler. Il n'est pas signé.
+          - os: macos-latest
+            label: macOS (.dmg universel)
+            args: '--target universal-apple-darwin --bundles app,dmg'
+            targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
 
     steps:
       - uses: actions/checkout@v5
@@ -43,6 +51,8 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -88,6 +98,17 @@ jobs:
 
             **Windows** — exécutez le `.msi` ou le `.exe`.
 
+            **macOS** — ouvrez le `.dmg` et glissez Debload dans « Applications ».
+            Le même fichier fonctionne sur les Mac Intel et Apple Silicon.
+
+            L'application n'est pas signée : au premier lancement, macOS la
+            bloque. Faites clic droit sur Debload, puis « Ouvrir », ou retirez
+            la quarantaine dans un terminal :
+
+            ```
+            xattr -d com.apple.quarantine /Applications/Debload.app
+            ```
+
             > Debload installe et désinstalle des paquets Debian. Ailleurs, il
             > télécharge le fichier qui convient et le confie à l'installeur du
             > système : assistant silencieux sous Windows quand il le reconnaît,
@@ -95,7 +116,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           # Ne publie rien de lui-même : la release reste en brouillon
-          # jusqu'à ce que les deux plateformes aient abouti.
+          # jusqu'à ce que toutes les plateformes aient abouti.
           includeUpdaterJson: false
 
   publish:
@@ -106,7 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Les deux plateformes ont abouti : on sort la release du brouillon.
+      # Toutes les plateformes ont abouti : on sort la release du brouillon.
       - name: Sortir du brouillon
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

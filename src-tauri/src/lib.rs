@@ -6,6 +6,7 @@ pub mod history;
 pub mod installer;
 pub mod launch;
 pub mod npm;
+pub mod npm_store;
 pub mod pkg;
 pub mod privileged;
 pub mod progress;

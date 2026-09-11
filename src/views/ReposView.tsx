@@ -5,7 +5,14 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LogPanel } from "../components/LogPanel";
 import { ProgressBar } from "../components/ProgressBar";
 import { RepoLine } from "../components/RepoLine";
-import { addRepo, formatError, listRepos, removeRepo, uninstallRepo } from "../lib/api";
+import {
+  addRepo,
+  formatError,
+  listRepos,
+  refreshRepo,
+  removeRepo,
+  uninstallRepo,
+} from "../lib/api";
 import { jobFor } from "../lib/queue";
 import { useQueue } from "../lib/queueRunner";
 import { useReleases } from "../lib/useReleases";
@@ -30,6 +37,8 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
+  /** Dépôt collé pour être installé, dont la release attend qu'on choisisse. */
+  const [choosing, setChoosing] = useState<string | null>(null);
 
   // La désinstallation passe par une confirmation : une seule à la fois, il
   // n'y a donc rien à mettre en file.
@@ -54,12 +63,16 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
     environment.settings.autoRefreshMinutes,
   );
 
-  const reload = useCallback(async () => {
+  /** Relit le catalogue, et rend ce qu'il contient pour qui veut enchaîner. */
+  const reload = useCallback(async (): Promise<RepoRow[]> => {
     try {
-      setRows(await listRepos());
+      const loaded = await listRepos();
+      setRows(loaded);
       setAddError(null);
+      return loaded;
     } catch (error) {
       setAddError(formatError(error));
+      return [];
     } finally {
       setLoading(false);
       // Le catalogue vient de dire la vérité sur les paquets installés : les
@@ -119,20 +132,63 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
     return () => unlisten?.();
   }, []);
 
-  const submitAdd = useCallback(
+  /** Ajoute le dépôt saisi et rend son slug, ou `null` s'il est refusé. */
+  const addDraft = useCallback(async (): Promise<string | null> => {
+    const input = draft.trim();
+    if (input === "") return null;
+
+    setChoosing(null);
+    try {
+      const slug = await addRepo(input);
+      setDraft("");
+      setAddError(null);
+      return slug;
+    } catch (error) {
+      setAddError(formatError(error));
+      return null;
+    }
+  }, [draft]);
+
+  const submitAdd = useCallback(async () => {
+    if ((await addDraft()) !== null) await reload();
+  }, [addDraft, reload]);
+
+  /**
+   * Ajoute le dépôt saisi et l'installe dans la foulée.
+   *
+   * Ce que la release propose décide de la suite : un seul fichier part en
+   * file comme sous un clic, plusieurs ouvrent leur choix sur la ligne. La file
+   * ne saurait pas trancher à notre place, et « Réessayer » retomberait
+   * indéfiniment sur la même question.
+   */
+  const submitInstall = useCallback(
     async (event: React.FormEvent) => {
       event.preventDefault();
-      if (draft.trim() === "") return;
+
+      const slug = await addDraft();
+      if (slug === null) return;
+
+      const added = (await reload()).find((candidate) => candidate.slug === slug);
+      if (!added) return;
+
       try {
-        await addRepo(draft.trim());
-        setDraft("");
-        setAddError(null);
-        await reload();
+        const release = await refreshRepo(slug, false);
+
+        // Déjà là, dans sa dernière version : la ligne le dit, rien à faire.
+        if (added.installed !== null && !release.updateAvailable) return;
+
+        if (release.assets.length === 0) {
+          setAddError(`Aucun fichier utilisable sur ce système dans ${release.tag}.`);
+        } else if (release.assets.length > 1) {
+          setChoosing(slug);
+        } else {
+          enqueue(added, null);
+        }
       } catch (error) {
         setAddError(formatError(error));
       }
     },
-    [draft, reload],
+    [addDraft, reload, enqueue],
   );
 
   const forget = useCallback(
@@ -173,7 +229,9 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
 
   return (
     <div className="view">
-      <form className="repo-add" onSubmit={submitAdd}>
+      {/* Entrée installe : c'est le geste pour lequel on colle une URL.
+          « Ajouter » reste là pour suivre un dépôt sans rien poser. */}
+      <form className="repo-add" aria-label="Ajouter un dépôt" onSubmit={submitInstall}>
         <input
           type="text"
           className="repo-add__field"
@@ -182,8 +240,16 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
         />
-        <button type="submit" className="button button--ghost" disabled={draft.trim() === ""}>
+        <button
+          type="button"
+          className="button button--ghost"
+          disabled={draft.trim() === ""}
+          onClick={() => void submitAdd()}
+        >
           Ajouter
+        </button>
+        <button type="submit" className="button button--primary" disabled={draft.trim() === ""}>
+          Installer
         </button>
       </form>
 
@@ -238,6 +304,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
               // reviendrait à la mise à jour suivante de Debload.
               onForget={row.bundled ? undefined : () => void forget(row.slug)}
               removing={removing === row.slug}
+              choose={choosing === row.slug}
             />
           ))}
         </ul>

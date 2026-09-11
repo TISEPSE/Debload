@@ -15,6 +15,11 @@ Installe un paquet `.deb` déposé dans sa fenêtre, et désinstalle en un clic 
   décrit à deux endroits. Tu peux ajouter tes propres dépôts, et retirer de la liste
   ceux que tu as ajoutés ; tes choix sont gardés à part et survivent aux mises à jour.
 
+Colle l'URL d'un dépôt GitHub — ou `owner/repo` — et appuie sur « Installer » : le
+dépôt rejoint la liste et s'installe dans la foulée. « Ajouter » le garde seulement
+à l'œil, sans rien poser. Quand la release propose plusieurs fichiers pour ton
+système, la ligne s'ouvre sur leur liste plutôt que de deviner.
+
 Un paquet venu du catalogue s'installe d'un seul clic : tu l'as déjà choisi en
 l'ajoutant, Debload ne te le redemande pas. Clique sur plusieurs lignes et elles
 prennent la file ; l'une s'installe pendant que la suivante se télécharge, et chaque

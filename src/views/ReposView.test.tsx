@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -345,6 +345,112 @@ describe("ReposView", () => {
 
     await waitFor(() => expect(addRepo).toHaveBeenCalledWith("microsoft/vscode"));
     await waitFor(() => expect(listRepos).toHaveBeenCalledTimes(2));
+  });
+
+  describe("installer en collant une URL", () => {
+    const vscode = {
+      ...fresh,
+      slug: "microsoft/vscode",
+      owner: "microsoft",
+      repo: "vscode",
+      label: "vscode",
+      description: null,
+      bundled: false,
+    };
+
+    /** Le catalogue avant l'ajout, puis après. */
+    function catalogGains(added: typeof vscode) {
+      listRepos.mockResolvedValueOnce([row]).mockResolvedValue([row, added]);
+    }
+
+    /** Colle l'URL et appuie sur le bouton « Installer » du formulaire. */
+    async function pasteAndInstall(input: string) {
+      await screen.findByText("MailFlow");
+      fireEvent.change(screen.getByLabelText(/ajouter un dépôt github/i), {
+        target: { value: input },
+      });
+      const form = screen.getByRole("form", { name: /ajouter un dépôt/i });
+      fireEvent.click(within(form).getByRole("button", { name: /^installer$/i }));
+    }
+
+    it("ajoute le dépôt et l'installe dans la foulée", async () => {
+      catalogGains(vscode);
+      addRepo.mockResolvedValue("microsoft/vscode");
+      refreshRepo.mockImplementation(async (slug: string) =>
+        slug === "microsoft/vscode"
+          ? { ...rel, slug, tag: "1.104.2", updateAvailable: false }
+          : rel,
+      );
+      prepareFromRepo.mockResolvedValue({ ...info, sourcePath: "/cache/code.deb" });
+      installDeb.mockResolvedValue({ package: "code", version: "1.104.2", launchable: true });
+
+      render(<Harness environment={debian} />);
+      await pasteAndInstall("https://github.com/microsoft/vscode");
+
+      await waitFor(() => expect(installDeb).toHaveBeenCalledWith("/cache/code.deb"));
+      expect(addRepo).toHaveBeenCalledWith("https://github.com/microsoft/vscode");
+      // Un seul fichier convient : personne n'a eu à le désigner.
+      expect(prepareFromRepo).toHaveBeenCalledWith("microsoft/vscode", null);
+    });
+
+    it("ouvre le choix du fichier au lieu de deviner quand plusieurs conviennent", async () => {
+      catalogGains(vscode);
+      addRepo.mockResolvedValue("microsoft/vscode");
+      refreshRepo.mockImplementation(async (slug: string) =>
+        slug === "microsoft/vscode"
+          ? {
+              ...rel,
+              slug,
+              updateAvailable: false,
+              assets: [
+                { name: "code_amd64.deb", url: "https://github.com/a", size: 1 },
+                { name: "code_arm64.deb", url: "https://github.com/b", size: 1 },
+              ],
+            }
+          : rel,
+      );
+
+      render(<Harness environment={debian} />);
+      await pasteAndInstall("microsoft/vscode");
+
+      // Les fichiers s'offrent sans un clic de plus sur « Choisir… ».
+      expect(await screen.findByRole("button", { name: "code_arm64.deb" })).toBeTruthy();
+      expect(prepareFromRepo).not.toHaveBeenCalled();
+    });
+
+    it("dit pourquoi rien ne s'installe quand le dépôt n'a pas de release", async () => {
+      catalogGains(vscode);
+      addRepo.mockResolvedValue("microsoft/vscode");
+      refreshRepo.mockImplementation((slug: string) =>
+        slug === "microsoft/vscode"
+          ? Promise.reject({ code: "no_release", detail: "microsoft/vscode" })
+          : Promise.resolve(rel),
+      );
+
+      const { container } = render(<Harness environment={debian} />);
+      await pasteAndInstall("microsoft/vscode");
+
+      // Le message tient sous le champ, là où le geste a été fait.
+      await waitFor(() =>
+        expect(container.querySelector(".result--error")?.textContent).toMatch(
+          /microsoft\/vscode n'a publié aucune release/,
+        ),
+      );
+      expect(prepareFromRepo).not.toHaveBeenCalled();
+    });
+
+    it("ne réinstalle pas un dépôt déjà à jour", async () => {
+      listRepos.mockResolvedValue([row]);
+      addRepo.mockResolvedValue("TISEPSE/MailFlow");
+      refreshRepo.mockResolvedValue({ ...rel, updateAvailable: false });
+
+      render(<Harness environment={debian} />);
+      await pasteAndInstall("TISEPSE/MailFlow");
+
+      await waitFor(() => expect(listRepos).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByText(/à jour \(0\.1\.8\)/i)).toBeTruthy());
+      expect(prepareFromRepo).not.toHaveBeenCalled();
+    });
   });
 
   it("force la vérification quand on la demande", async () => {

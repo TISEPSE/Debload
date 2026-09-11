@@ -1352,11 +1352,16 @@ pub async fn refresh_repo(
     .map_err(|e| DebloadError::Io(e.to_string()))?
 }
 
+/// Ajoute un dépôt et rend son slug, sous la forme « owner/repo ».
+///
+/// L'interface a pu envoyer une URL : c'est par le slug qu'elle retrouve la
+/// ligne sur laquelle enchaîner l'installation.
 #[tauri::command]
-pub fn add_repo(input: String, state: State<'_, AppState>) -> Result<(), DebloadError> {
+pub fn add_repo(input: String, state: State<'_, AppState>) -> Result<String, DebloadError> {
     let mut user = repos::load_user(&state.repos_path);
-    repo_ops::add(&mut user, &input)?;
-    repos::save_user(&state.repos_path, &user)
+    let repo = repo_ops::add(&mut user, &input)?;
+    repos::save_user(&state.repos_path, &user)?;
+    Ok(repo.slug())
 }
 
 /// Retire un dépôt : définitivement s'il avait été ajouté à la main, en le

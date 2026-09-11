@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
 import type { Job, JobState } from "../lib/queue";
@@ -25,6 +25,11 @@ interface RepoLineProps {
   onForget?: () => void;
   /** Vrai pendant que la désinstallation de cette ligne travaille. */
   removing?: boolean;
+  /**
+   * Ouvre d'emblée la liste des fichiers : le dépôt vient d'être collé pour
+   * être installé, et sa release en propose plusieurs.
+   */
+  choose?: boolean;
 }
 
 /**
@@ -70,8 +75,15 @@ export function RepoLine({
   onUninstall,
   onForget,
   removing = false,
+  choose = false,
 }: RepoLineProps) {
-  const [choosing, setChoosing] = useState(false);
+  const [choosing, setChoosing] = useState(choose);
+
+  // La ligne existe souvent déjà quand la demande arrive : le catalogue est
+  // relu avant que la release ne dise combien de fichiers elle propose.
+  useEffect(() => {
+    if (choose) setChoosing(true);
+  }, [choose]);
 
   const ready = state.status === "ready" ? state.release : null;
   const hasAssets = (ready?.assets.length ?? 0) > 0;

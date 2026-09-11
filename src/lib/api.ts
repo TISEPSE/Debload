@@ -34,7 +34,11 @@ export const listRepos = () => invoke<RepoRow[]>("list_repos");
 export const refreshRepo = (slug: string, force = false) =>
   invoke<RepoRelease>("refresh_repo", { slug, force });
 
-export const addRepo = (input: string) => invoke<void>("add_repo", { input });
+/**
+ * Ajoute un dépôt et rend son slug. Ce qu'on a saisi peut être une URL : c'est
+ * par le slug que se retrouve ensuite sa ligne.
+ */
+export const addRepo = (input: string) => invoke<string>("add_repo", { input });
 
 export const removeRepo = (slug: string) => invoke<void>("remove_repo", { slug });
 

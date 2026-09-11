@@ -118,6 +118,24 @@ describe("RepoLine", () => {
     expect(onInstall).toHaveBeenCalledWith("app_arm64.deb");
   });
 
+  it("ouvre d'emblée le choix du fichier quand on le lui demande", () => {
+    const onInstall = vi.fn();
+    const state = release({
+      assets: [
+        { name: "app_amd64.deb", url: "https://github.com/a", size: 1 },
+        { name: "app_arm64.deb", url: "https://github.com/b", size: 1 },
+      ],
+    });
+
+    render(
+      <RepoLine row={row} state={state} onInstall={onInstall} onUninstall={noop} choose />,
+    );
+
+    // Pas de clic sur « Choisir… » : le dépôt vient d'être collé pour être installé.
+    fireEvent.click(screen.getByRole("button", { name: "app_amd64.deb" }));
+    expect(onInstall).toHaveBeenCalledWith("app_amd64.deb");
+  });
+
   it("désactive l'action quand la release n'a aucun fichier utilisable", () => {
     const state = release({ assets: [], updateAvailable: false });
     render(<RepoLine row={fresh} state={state} onInstall={noop} onUninstall={noop} />);

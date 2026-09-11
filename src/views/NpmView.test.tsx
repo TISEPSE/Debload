@@ -180,8 +180,33 @@ describe("NpmView", () => {
     fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
 
     expect(await screen.findByText(/voir la sortie de npm/i)).toBeTruthy();
+    // La sortie complète reste dépliable ; le message, lui, va à l'essentiel.
     expect(screen.getByText("npm error code E404")).toBeTruthy();
-    expect(screen.getByText("npm error 404 Not Found")).toBeTruthy();
+    expect(screen.getByText("404 Not Found")).toBeTruthy();
+  });
+
+  it("dit clairement quand une mise à jour ratée a retiré le paquet, et propose de le réinstaller", async () => {
+    const cowsay = { name: "cowsay", installed: "1.5.0", prefix: "~/.local", managed: false };
+    // Avant : le paquet est là. Après l'échec : npm l'a retiré.
+    npmStatus
+      .mockResolvedValueOnce({ ...ready, packages: [cowsay] })
+      .mockResolvedValue({ ...ready, packages: [] });
+    npmInstall.mockRejectedValue({
+      code: "command_failed",
+      detail: "npm ERR! Error: ERROR: Failed to set up chrome v148.0.7778.97!",
+    });
+
+    render(<NpmView />);
+    fireEvent.click(await screen.findByRole("button", { name: /mettre à jour/i }));
+
+    const message = await screen.findByText(/npm l'a retiré/i);
+    expect(message.textContent).toMatch(/cowsay/);
+    expect(message.textContent).toMatch(/failed to set up chrome v148/i);
+    // La liste a été relue : elle ne prétend plus que cowsay est installé.
+    expect(screen.getByText(/aucun paquet npm global/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Réinstaller cowsay" }));
+    await waitFor(() => expect(npmInstall).toHaveBeenCalledTimes(2));
   });
 
   it("prévient quand les commandes installées ne sont pas dans le PATH", async () => {

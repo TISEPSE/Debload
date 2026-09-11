@@ -1304,6 +1304,21 @@
   margin-top: 10px;
 }
 
+/* Un paquet emporté par un échec : le message tient la place de sa ligne. */
+.npm__lost {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.npm__lost-message {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
 /* Deux listes, qu'un titre discret suffit à séparer. */
 .npm__heading {
   display: flex;

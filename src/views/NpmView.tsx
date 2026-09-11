@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
+  ArrowClockwise,
   CaretDown,
   CheckCircle,
   Compass,
@@ -10,6 +11,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { LogPanel } from "../components/LogPanel";
 import { NpmCard } from "../components/NpmCard";
 import { NpmLine } from "../components/NpmLine";
 import { SkeletonRows } from "../components/SkeletonRows";
@@ -22,6 +24,7 @@ import {
   npmStatus,
   npmUninstall,
 } from "../lib/api";
+import { formatNpmError } from "../lib/npmErrors";
 import { NPM_SUGGESTIONS } from "../lib/npmSuggestions";
 import type { LogLine, NpmHit, NpmStatus } from "../lib/types";
 
@@ -36,6 +39,8 @@ interface Busy {
 interface Failure {
   message: string;
   logs: LogLine[];
+  /** Vrai quand l'échec a emporté le paquet qui était installé avant. */
+  removed?: boolean;
 }
 
 /**
@@ -102,9 +107,13 @@ export function NpmView() {
     return () => unlisten?.();
   }, []);
 
-  const reload = useCallback(async () => {
+  /** Le dernier statut lu, pour savoir ce qui était là avant une opération. */
+  const statusRef = useRef<NpmStatus | null>(null);
+
+  const reload = useCallback(async (): Promise<NpmStatus | null> => {
     try {
       const loaded = await npmStatus();
+      statusRef.current = loaded;
       setStatus(loaded);
       setLoadError(null);
 
@@ -116,8 +125,10 @@ export function NpmView() {
           () => {},
         );
       }
+      return loaded;
     } catch (error) {
       setLoadError(formatError(error));
+      return null;
     }
   }, []);
 
@@ -207,6 +218,9 @@ export function NpmView() {
         return next;
       });
 
+      const wasInstalled =
+        statusRef.current?.packages.some((pkg) => pkg.name === name) ?? false;
+
       try {
         if (kind === "installing") {
           await npmInstall(name);
@@ -215,9 +229,18 @@ export function NpmView() {
         }
         await reload();
       } catch (error) {
+        // Une mise à jour ratée peut emporter le paquet qu'elle remplaçait :
+        // la liste est relue, pour ne pas prétendre qu'il est toujours là.
+        const reloaded = await reload();
+        const removed =
+          kind === "installing" &&
+          wasInstalled &&
+          reloaded !== null &&
+          !reloaded.packages.some((pkg) => pkg.name === name);
+
         setFailures((previous) => ({
           ...previous,
-          [name]: { message: formatError(error), logs: [...logs.current] },
+          [name]: { message: formatNpmError(error), logs: [...logs.current], removed },
         }));
       } finally {
         setBusy(null);
@@ -305,6 +328,33 @@ export function NpmView() {
               <CheckCircle size={15} aria-hidden="true" />
               Paquets installés
             </h2>
+            {/* Le paquet emporté par un échec n'a plus de ligne : le message
+                prend sa place, avec de quoi le reposer. */}
+            {Object.entries(failures)
+              .filter(([name, failure]) => failure.removed && !installedPackage(name))
+              .map(([name, failure]) => (
+                <div key={name} className="result result--error npm__lost">
+                  <p className="npm__lost-message">
+                    La mise à jour de {name} a échoué, et npm l'a retiré : {failure.message}
+                  </p>
+                  {failure.logs.length > 0 && (
+                    <details className="details">
+                      <summary>Voir la sortie de npm</summary>
+                      <LogPanel logs={failure.logs} />
+                    </details>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={busy !== null}
+                    aria-label={`Réinstaller ${name}`}
+                    onClick={() => void run(name, "installing")}
+                  >
+                    <ArrowClockwise size={16} aria-hidden="true" />
+                    Réinstaller
+                  </button>
+                </div>
+              ))}
             {status === null ? (
               <SkeletonRows label="Lecture des paquets npm…" count={2} />
             ) : status.packages.length === 0 ? (

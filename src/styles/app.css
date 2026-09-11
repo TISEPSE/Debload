@@ -1105,6 +1105,10 @@
   margin-top: 0;
 }
 
+.npm__more {
+  margin-top: 10px;
+}
+
 /* Deux listes, qu'un titre discret suffit à séparer. */
 .npm__heading {
   margin: 0 0 10px;

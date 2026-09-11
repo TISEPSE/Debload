@@ -3,8 +3,8 @@ import type {
   DebInfo,
   DebloadError,
   Environment,
-  NpmHit,
   NpmPackage,
+  NpmSearchPage,
   NpmStatus,
   OperationResult,
   RepoRelease,
@@ -55,7 +55,9 @@ export const downloadFromRepo = (slug: string, assetName: string | null) =>
 /** Ce que Debload a installé avec npm, sans appel au registre. */
 export const npmStatus = () => invoke<NpmStatus>("npm_status");
 
-export const npmSearch = (query: string) => invoke<NpmHit[]>("npm_search", { query });
+/** Une page de résultats, à partir du rang `from`. */
+export const npmSearch = (query: string, from = 0) =>
+  invoke<NpmSearchPage>("npm_search", { query, from });
 
 /** Dernière version publiée d'un paquet. */
 export const npmLatest = (name: string) => invoke<string>("npm_latest", { name });

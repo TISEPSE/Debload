@@ -441,22 +441,56 @@ pub fn latest_url(name: &str) -> String {
 
 /// Cherche au registre. Une requête de moins de deux caractères ne part pas :
 /// elle ne rendrait que du bruit.
-pub fn search(query: &str) -> Result<Vec<NpmHit>, DebloadError> {
+///
+/// `from` est le rang du premier résultat voulu : l'interface charge la suite
+/// page après page, autant de fois qu'on le lui demande.
+pub fn search(query: &str, from: usize) -> Result<NpmSearchPage, DebloadError> {
     let text = query.trim();
     if text.chars().count() < 2 {
-        return Ok(Vec::new());
+        return Ok(NpmSearchPage {
+            hits: Vec::new(),
+            total: 0,
+        });
     }
 
     let url = format!("{REGISTRY}/-/v1/search");
     let body = crate::github::agent()
         .get(&url)
         .query("text", text)
-        .query("size", "10")
+        .query("size", SEARCH_PAGE_SIZE.to_string())
+        .query("from", from.to_string())
         .call()
         .and_then(|mut response| response.body_mut().read_to_string())
         .map_err(registry_error)?;
 
-    parse_search(&body)
+    parse_search_page(&body)
+}
+
+/// Nombre de résultats demandés au registre à chaque page.
+const SEARCH_PAGE_SIZE: usize = 10;
+
+/// Une page de résultats, et le nombre total que le registre annonce : c'est
+/// lui qui dit s'il reste quelque chose à charger.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NpmSearchPage {
+    pub hits: Vec<NpmHit>,
+    pub total: u64,
+}
+
+pub fn parse_search_page(json: &str) -> Result<NpmSearchPage, DebloadError> {
+    #[derive(Deserialize)]
+    struct Total {
+        #[serde(default)]
+        total: u64,
+    }
+
+    let hits = parse_search(json)?;
+    // Sans total annoncé, on s'en tient à ce qu'on a : rien de plus à charger.
+    let total = serde_json::from_str::<Total>(json)
+        .map(|t| t.total)
+        .unwrap_or(hits.len() as u64);
+    Ok(NpmSearchPage { hits, total })
 }
 
 /// La dernière version publiée d'un paquet.
@@ -787,7 +821,22 @@ mod tests {
     #[test]
     fn a_query_too_short_asks_nothing_of_the_registry() {
         // Aucun réseau en test : une requête partie ferait échouer l'appel.
-        assert_eq!(search(" a ").unwrap(), vec![]);
+        let page = search(" a ", 0).unwrap();
+        assert!(page.hits.is_empty());
+        assert_eq!(page.total, 0);
+    }
+
+    #[test]
+    fn a_search_page_says_how_many_results_exist_in_all() {
+        // C'est ce total qui dit s'il reste des résultats à charger.
+        let page = parse_search_page(include_str!("../tests/fixtures/npm_search_typescript.json"))
+            .unwrap();
+        assert_eq!(page.hits.len(), 3);
+        assert!(
+            page.total > 3,
+            "le registre annonce plus que la page : {}",
+            page.total
+        );
     }
 
     #[test]

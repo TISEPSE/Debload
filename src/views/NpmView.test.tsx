@@ -19,7 +19,7 @@ vi.mock("../lib/api", async () => {
   return {
     ...actual,
     npmStatus: () => npmStatus(),
-    npmSearch: (query: string) => npmSearch(query),
+    npmSearch: (query: string, from?: number) => npmSearch(query, from),
     npmLatest: (name: string) => npmLatest(name),
     npmInstall: (name: string) => npmInstall(name),
     npmUninstall: (name: string) => npmUninstall(name),
@@ -50,7 +50,7 @@ describe("NpmView", () => {
     );
     npmStatus.mockResolvedValue(ready);
     npmLatest.mockResolvedValue("7.0.2");
-    npmSearch.mockResolvedValue([]);
+    npmSearch.mockResolvedValue({ hits: [], total: 0 });
   });
 
   it("dit que npm manque plutôt que d'afficher une page vide", async () => {
@@ -71,9 +71,10 @@ describe("NpmView", () => {
   });
 
   it("cherche au registre, puis installe", async () => {
-    npmSearch.mockResolvedValue([
-      { name: "pnpm", version: "10.0.0", description: "Fast, disk space efficient" },
-    ]);
+    npmSearch.mockResolvedValue({
+      hits: [{ name: "pnpm", version: "10.0.0", description: "Fast, disk space efficient" }],
+      total: 1,
+    });
     npmInstall.mockResolvedValue({ name: "pnpm", installed: "10.0.0" });
 
     render(<NpmView />);
@@ -84,10 +85,49 @@ describe("NpmView", () => {
     });
 
     expect(await screen.findByText("pnpm")).toBeTruthy();
-    expect(npmSearch).toHaveBeenCalledWith("pnp");
+    expect(npmSearch).toHaveBeenCalledWith("pnp", 0);
 
     fireEvent.click(screen.getByRole("button", { name: /^installer$/i }));
     await waitFor(() => expect(npmInstall).toHaveBeenCalledWith("pnpm"));
+  });
+
+  it("charge la suite des résultats à la demande", async () => {
+    npmSearch.mockImplementation(async (_query: string, from: number) =>
+      from === 0
+        ? { hits: [{ name: "pnpm", version: "10.0.0", description: null }], total: 2 }
+        : { hits: [{ name: "pnpx", version: "1.0.0", description: null }], total: 2 },
+    );
+
+    render(<NpmView />);
+    await screen.findByText("typescript");
+    fireEvent.change(screen.getByLabelText(/chercher un paquet npm/i), {
+      target: { value: "pnp" },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: /afficher plus/i }));
+
+    // La suite s'ajoute à ce qui est déjà là, sans le remplacer.
+    expect(await screen.findByText("pnpx")).toBeTruthy();
+    expect(screen.getByText("pnpm")).toBeTruthy();
+    expect(npmSearch).toHaveBeenLastCalledWith("pnp", 1);
+    // Tout le total est affiché : plus rien à charger.
+    expect(screen.queryByRole("button", { name: /afficher plus/i })).toBeNull();
+  });
+
+  it("n'offre pas d'en charger plus quand tout est déjà là", async () => {
+    npmSearch.mockResolvedValue({
+      hits: [{ name: "pnpm", version: "10.0.0", description: null }],
+      total: 1,
+    });
+
+    render(<NpmView />);
+    await screen.findByText("typescript");
+    fireEvent.change(screen.getByLabelText(/chercher un paquet npm/i), {
+      target: { value: "pnp" },
+    });
+
+    expect(await screen.findByText("pnpm")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /afficher plus/i })).toBeNull();
   });
 
   it("ne désinstalle qu'après confirmation", async () => {
@@ -175,7 +215,7 @@ describe("NpmView", () => {
       target: { value: "pnp" },
     });
 
-    await waitFor(() => expect(npmSearch).toHaveBeenCalledWith("pnp"));
+    await waitFor(() => expect(npmSearch).toHaveBeenCalledWith("pnp", 0));
     await waitFor(() => expect(container.querySelector(".skeleton__row")).not.toBeNull());
     expect(screen.getByRole("status").textContent).toMatch(/recherche/i);
   });

@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::commands::{AppState, LogLine};
 use crate::error::DebloadError;
-use crate::npm::{self, NpmHit, NpmPackage, NpmStatus};
+use crate::npm::{self, NpmPackage, NpmSearchPage, NpmStatus};
 
 /// Fait tourner un travail bloquant hors du fil de l'interface.
 async fn blocking<T: Send + 'static>(
@@ -52,9 +52,10 @@ pub async fn npm_status(state: State<'_, AppState>) -> Result<NpmStatus, Debload
     .await
 }
 
+/// Une page de résultats, à partir du rang `from`.
 #[tauri::command]
-pub async fn npm_search(query: String) -> Result<Vec<NpmHit>, DebloadError> {
-    blocking(move || npm::search(&query)).await
+pub async fn npm_search(query: String, from: usize) -> Result<NpmSearchPage, DebloadError> {
+    blocking(move || npm::search(&query, from)).await
 }
 
 #[tauri::command]

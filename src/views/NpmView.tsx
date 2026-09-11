@@ -47,6 +47,9 @@ export function NpmView() {
   const [searchError, setSearchError] = useState<string | null>(null);
   /** Vrai de la frappe jusqu'à la réponse du registre. */
   const [searching, setSearching] = useState(false);
+  /** Nombre de résultats que le registre annonce pour la recherche en cours. */
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [busy, setBusy] = useState<Busy | null>(null);
   const [failures, setFailures] = useState<Record<string, Failure>>({});
@@ -102,10 +105,11 @@ export function NpmView() {
     let cancelled = false;
     setSearching(true);
     const timer = setTimeout(() => {
-      npmSearch(text).then(
-        (found) => {
+      npmSearch(text, 0).then(
+        (page) => {
           if (cancelled) return;
-          setHits(found);
+          setHits(page.hits);
+          setTotal(page.total);
           setSearchError(null);
           setSearching(false);
         },
@@ -122,6 +126,20 @@ export function NpmView() {
       clearTimeout(timer);
     };
   }, [query]);
+
+  /** Charge la page suivante et l'ajoute à ce qui est déjà affiché. */
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    try {
+      const page = await npmSearch(query.trim(), hits.length);
+      setHits((previous) => [...previous, ...page.hits]);
+      setTotal(page.total);
+    } catch (error) {
+      setSearchError(formatError(error));
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [query, hits.length]);
 
   const run = useCallback(
     async (name: string, kind: Busy["kind"]) => {
@@ -248,9 +266,27 @@ export function NpmView() {
               {searching ? (
                 <SkeletonRows label="Recherche dans le registre npm…" count={3} />
               ) : (
-                <ul className="packages">
-                  {hits.map((hit) => line(hit.name, hit.description, hit.version, false))}
-                </ul>
+                <>
+                  <ul className="packages">
+                    {hits.map((hit) => line(hit.name, hit.description, hit.version, false))}
+                  </ul>
+                  {/* Le registre en a davantage : la suite se charge à la demande,
+                      autant de fois qu'on veut. */}
+                  {hits.length < total && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary npm__more"
+                      disabled={loadingMore}
+                      onClick={() => void loadMore()}
+                    >
+                      {loadingMore
+                        ? "Chargement…"
+                        : `Afficher plus (${(total - hits.length).toLocaleString("fr-FR")} ${
+                            total - hits.length > 1 ? "restants" : "restant"
+                          })`}
+                    </button>
+                  )}
+                </>
               )}
             </section>
           )}

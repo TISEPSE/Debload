@@ -102,6 +102,12 @@ export interface NpmStatus {
   packages: NpmPackage[];
 }
 
+/** Une page de résultats, et le total que le registre annonce. */
+export interface NpmSearchPage {
+  hits: NpmHit[];
+  total: number;
+}
+
 /** Un résultat de recherche du registre npm. */
 export interface NpmHit {
   name: string;

@@ -32,6 +32,22 @@ seul endroit qui te dit ce que contient un `.deb` venu d'ailleurs.
 Debload ne désinstalle que ce qu'il a installé, et refuse de toucher aux paquets que
 dpkg déclare essentiels.
 
+## npm
+
+L'onglet « npm » installe des outils publiés sur le registre npm — `typescript`,
+`pnpm`… — en global. Cherche un paquet, clique sur « Installer » ; la liste en dessous
+tient ce que Debload a installé, avec « Mettre à jour » quand une version plus
+récente est publiée et « Désinstaller » après confirmation. Comme partout, Debload
+ne retire que ce qu'il a posé.
+
+Rien ne passe par root. Si npm peut écrire dans son propre préfixe global, Debload
+s'en sert ; sinon — c'est le cas du préfixe `/usr` d'une Debian standard — il installe
+dans `~/.local`, dont les commandes arrivent dans `~/.local/bin`. L'onglet prévient
+si ce dossier n'est pas dans ton `PATH`. Chaque paquet est noté avec le préfixe où il
+a été posé : une mise à jour ou une désinstallation vise toujours le même endroit.
+
+Sans Node.js, l'onglet le dit plutôt que de rester vide.
+
 ## Ailleurs que sur Debian
 
 Le catalogue fonctionne partout ; c'est l'installation qui change de main. Là où apt
@@ -92,6 +108,10 @@ polkit, aucune entrée sudoers.
 
 - Seuls `github.com` et les hôtes de fichiers de GitHub sont téléchargeables : une
   release ne peut pas rediriger Debload ailleurs.
+- Pour npm, Debload n'interroge que `registry.npmjs.org`, et ne passe à npm qu'un nom
+  du registre, validé avant tout appel : ni option, ni URL, ni chemin, ni version
+  accolée. Il n'installe jamais en root ; les scripts d'installation d'un paquet
+  s'exécutent sous ton compte, exactement comme un `npm install -g` tapé à la main.
 - Les dépôts privés passent par le jeton de ta session `gh`, demandé à la volée. Rien
   n'est stocké, et il n'atteint jamais l'interface.
 - Aucun shell n'intervient : les commandes sont lancées avec des arguments séparés,
@@ -106,8 +126,8 @@ polkit, aucune entrée sudoers.
 ```bash
 npm install
 npm run tauri dev            # lancer
-npm test                     # tests frontend (118)
-cd src-tauri && cargo test   # tests backend (201)
+npm test                     # tests frontend (134)
+cd src-tauri && cargo test   # tests backend (239)
 npm run tauri build          # produire le .deb
 ```
 

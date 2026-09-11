@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { TerminalWindow } from "@phosphor-icons/react";
+import { Warning } from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NpmLine } from "../components/NpmLine";
@@ -198,15 +198,14 @@ export function NpmView() {
         <p className="empty">npm introuvable. Installe Node.js pour utiliser cet onglet.</p>
       ) : (
         <>
-          {status?.binDir && (
+          {/* Seul le cas qui empêcherait les commandes de marcher mérite une ligne. */}
+          {status?.binDir && !status.binOnPath && (
             <p className="npm__where">
-              <TerminalWindow size={16} aria-hidden="true" />
+              <Warning size={16} aria-hidden="true" />
               <span>
-                Installation dans <code className="result__path">{status.binDir}</code>, sans
-                droits root.{" "}
-                {status.binOnPath
-                  ? "Ce dossier est bien dans ton PATH."
-                  : "Ce dossier n'est pas dans ton PATH : les commandes y resteront introuvables."}
+                Les commandes s'installent dans{" "}
+                <code className="result__path">{status.binDir}</code>, qui n'est pas dans ton
+                PATH : elles y resteront introuvables.
               </span>
             </p>
           )}

@@ -124,9 +124,11 @@ describe("NpmView", () => {
     expect(screen.getByText(/n'est pas dans ton PATH/i)).toBeTruthy();
   });
 
-  it("dit aussi quand les commandes installées sont bien dans le PATH", async () => {
+  it("ne dit rien du PATH quand tout va bien", async () => {
     render(<NpmView />);
-    expect(await screen.findByText(/bien dans ton PATH/i)).toBeTruthy();
+    await screen.findByText("typescript");
+    // Seul le cas qui empêcherait les commandes de marcher mérite une ligne.
+    expect(screen.queryByText(/dans ton PATH/i)).toBeNull();
   });
 
   it("propose des paquets pratiques tant que la recherche est vide", async () => {

@@ -1054,11 +1054,12 @@
 
 /* --- Cartes de dépôts ---------------------------------------------------- */
 
-/* « Voir sur GitHub », juste à côté du bouton principal : le logo suffit à
-   le reconnaître, le lecteur d'écran entend son nom. */
-.tile__github {
-  min-width: 44px;
-  padding-inline: 0;
+/* Les boutons d'une même rangée se partagent la largeur à parts égales :
+   « GitHub » est aussi grand que « Installer ». Un bouton qui ne tient plus
+   passe à la ligne entier, sans que son texte se coupe. */
+.tile__actions > .btn {
+  flex: 1 1 0;
+  white-space: nowrap;
 }
 
 /* Le verdict d'une carte, et ce qui s'y ajoute pendant une installation. */
@@ -1075,7 +1076,8 @@
   gap: 8px;
 }
 
-.tile__forget {
+.tile__actions > .tile__forget {
+  flex: none;
   min-width: 44px;
   min-height: 44px;
   margin-left: auto;

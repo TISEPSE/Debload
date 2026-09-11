@@ -331,6 +331,8 @@ describe("RepoLine", () => {
     openUrl.mockResolvedValue(undefined);
     render(<RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />);
     const github = screen.getByRole("button", { name: "Voir MailFlow sur GitHub" });
+    // Un vrai bouton, écrit comme son voisin, pas une icône minuscule.
+    expect(github.textContent).toBe("GitHub");
     // Juste à côté du bouton principal, là où se prend la décision d'installer.
     expect(github.previousElementSibling).toBe(
       screen.getByRole("button", { name: /mettre à jour/i }),

@@ -331,7 +331,8 @@ export function RepoLine({
             title="Voir sur GitHub"
             onClick={() => void openRepoPage(row.owner, row.repo).catch(() => {})}
           >
-            <GithubLogo size={20} aria-hidden="true" />
+            <GithubLogo size={16} aria-hidden="true" />
+            GitHub
           </button>
 
           {/* Désinstaller retire l'application ; Retirer retire le dépôt de la

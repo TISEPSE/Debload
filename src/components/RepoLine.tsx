@@ -114,7 +114,7 @@ export function RepoLine({
     if (ready!.updateAvailable) {
       return (
         <span className="repo__state repo__state--update">
-          {ready!.tag} disponible — installé : {row.installed}
+          {ready!.tag} disponible (installé : {row.installed})
         </span>
       );
     }
@@ -123,7 +123,7 @@ export function RepoLine({
     }
     return (
       <span className="repo__state">
-        {ready!.installable ? "Pas installé" : "Disponible"} — dernière version {ready!.tag}
+        {ready!.installable ? "Pas installé" : "Disponible"}, dernière version {ready!.tag}
       </span>
     );
   };
@@ -141,7 +141,7 @@ export function RepoLine({
       case "ready":
         return (
           <span className="repo__state repo__state--waiting">
-            Téléchargé — attend l'installation
+            Téléchargé, en attente d'installation
           </span>
         );
       case "done":
@@ -227,7 +227,7 @@ export function RepoLine({
             en disant depuis quand elle le sait. */}
         {!job && ready?.stale && (
           <p className="repo__stale">
-            Hors ligne — dernière vérification {sinceLabel(ready.checkedAt)}
+            Hors ligne, dernière vérification {sinceLabel(ready.checkedAt)}
           </p>
         )}
 

@@ -145,7 +145,7 @@ export function NpmView() {
   if (!status) return <p className="status">Lecture des paquets npm…</p>;
 
   if (!status.available) {
-    return <p className="empty">npm introuvable — installe Node.js pour utiliser cet onglet.</p>;
+    return <p className="empty">npm introuvable. Installe Node.js pour utiliser cet onglet.</p>;
   }
 
   const installedVersion = (name: string) =>

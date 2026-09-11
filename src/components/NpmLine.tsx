@@ -47,7 +47,7 @@ export function NpmLine({
     if (updateAvailable) {
       return (
         <span className="repo__state repo__state--update">
-          {latest} disponible — installé : {installed}
+          {latest} disponible (installé : {installed})
         </span>
       );
     }

@@ -15,7 +15,7 @@ const INTERVALS: Array<{ minutes: number; label: string }> = [
   { minutes: 15, label: "Toutes les 15 minutes" },
   { minutes: 30, label: "Toutes les 30 minutes" },
   { minutes: 120, label: "Toutes les 2 heures" },
-  { minutes: 0, label: "Jamais — seulement à l'ouverture" },
+  { minutes: 0, label: "Jamais (seulement à l'ouverture)" },
 ];
 
 /** Durées de validité proposées pour les versions déjà connues. */

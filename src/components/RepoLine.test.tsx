@@ -193,7 +193,7 @@ describe("RepoLine", () => {
         onUninstall={noop}
       />,
     );
-    expect(screen.getByText(/attend l'installation/i)).toBeTruthy();
+    expect(screen.getByText(/en attente d'installation/i)).toBeTruthy();
   });
 
   it("montre l'avancement de l'installation, sans rien à cliquer", () => {
@@ -221,7 +221,7 @@ describe("RepoLine", () => {
         state={release()}
         job={job({
           phase: "failed",
-          message: "GitHub est injoignable — vérification de la connexion…",
+          message: "GitHub est injoignable. Vérification de la connexion…",
           logs: [{ stream: "stderr", line: "E: dépendance manquante" }],
         })}
         onInstall={onInstall}
@@ -262,7 +262,7 @@ describe("RepoLine", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /télécharger/i })).toBeTruthy();
-    expect(screen.getByText(/disponible — dernière version/i)).toBeTruthy();
+    expect(screen.getByText(/disponible, dernière version/i)).toBeTruthy();
   });
 
   it("propose de mettre à jour et de désinstaller côte à côte", () => {
@@ -352,7 +352,7 @@ describe("RepoLine", () => {
         row={row}
         state={{
           status: "retrying",
-          message: "GitHub est injoignable — vérification de la connexion…",
+          message: "GitHub est injoignable. Vérification de la connexion…",
           attempt: 2,
         }}
         onInstall={noop}
@@ -374,7 +374,7 @@ describe("RepoLine", () => {
     render(<RepoLine row={row} state={state} onInstall={noop} onUninstall={noop} />);
 
     expect(screen.getByText(/v0\.1\.9 disponible/)).toBeTruthy();
-    expect(screen.getByText(/hors ligne — dernière vérification il y a 2 h/i)).toBeTruthy();
+    expect(screen.getByText(/hors ligne, dernière vérification il y a 2 h/i)).toBeTruthy();
   });
 
   it("affiche sans bouton une erreur définitive", () => {

@@ -557,18 +557,7 @@ pub async fn download_from_repo(
         // La taille voyage dans le libellé : sur un paquet de plusieurs
         // centaines de méga-octets, un pourcentage seul ne dit pas si ça avance.
         let on_progress = |percent: f32, done: u64, total: u64| {
-            let message = if total > 0 {
-                format!(
-                    "Téléchargement du fichier — {} sur {}",
-                    github::human_size(done),
-                    github::human_size(total)
-                )
-            } else {
-                format!(
-                    "Téléchargement du fichier — {} reçus",
-                    github::human_size(done)
-                )
-            };
+            let message = github::download_label("fichier", done, total);
 
             let _ = app.emit(
                 "download-progress",
@@ -1399,18 +1388,7 @@ pub async fn prepare_from_repo(
         // La taille voyage dans le libellé : sur un paquet de plusieurs
         // centaines de méga-octets, un pourcentage seul ne dit pas si ça avance.
         let on_progress = |percent: f32, done: u64, total: u64| {
-            let message = if total > 0 {
-                format!(
-                    "Téléchargement du paquet — {} sur {}",
-                    github::human_size(done),
-                    github::human_size(total)
-                )
-            } else {
-                format!(
-                    "Téléchargement du paquet — {} reçus",
-                    github::human_size(done)
-                )
-            };
+            let message = github::download_label("paquet", done, total);
 
             let _ = app.emit(
                 "download-progress",

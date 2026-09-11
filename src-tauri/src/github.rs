@@ -562,6 +562,23 @@ pub fn download(
     Ok(())
 }
 
+/// Ce que dit la barre pendant un téléchargement.
+///
+/// La taille voyage dans le libellé : sur un paquet de plusieurs centaines de
+/// méga-octets, un pourcentage seul ne dit pas si ça avance. Sans taille
+/// annoncée par le serveur, on dit ce qui est déjà arrivé.
+pub fn download_label(what: &str, done: u64, total: u64) -> String {
+    if total > 0 {
+        format!(
+            "Téléchargement du {what} : {} sur {}",
+            human_size(done),
+            human_size(total)
+        )
+    } else {
+        format!("Téléchargement du {what} : {} reçus", human_size(done))
+    }
+}
+
 /// Une taille d'octets telle qu'on la lit dans une phrase.
 pub fn human_size(bytes: u64) -> String {
     const MO: f64 = 1024.0 * 1024.0;
@@ -881,6 +898,19 @@ mod tests {
         assert_eq!(human_size(4096), "4 ko");
         // Jamais « 0 ko » : quelques octets sont déjà quelque chose.
         assert_eq!(human_size(12), "1 ko");
+    }
+
+    #[test]
+    fn a_download_label_reads_without_a_dash() {
+        assert_eq!(
+            download_label("paquet", 12 * 1024 * 1024, 80 * 1024 * 1024),
+            "Téléchargement du paquet : 12 Mo sur 80 Mo"
+        );
+        // Sans taille annoncée, on dit ce qui est arrivé.
+        assert_eq!(
+            download_label("fichier", 12 * 1024 * 1024, 0),
+            "Téléchargement du fichier : 12 Mo reçus"
+        );
     }
 
     /// Les appels d'API, à l'inverse, gardent leur plafond.

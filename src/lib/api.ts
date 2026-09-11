@@ -109,7 +109,7 @@ export function formatError(error: unknown): string {
     case "asset_choice_required":
       return "Plusieurs paquets conviennent : choisis-en un.";
     case "offline":
-      return "GitHub est injoignable — vérification de la connexion…";
+      return "GitHub est injoignable. Vérification de la connexion…";
     case "github_rate_limited":
       return "Limite d'appels à GitHub atteinte. Réessaie dans quelques minutes.";
     case "github_failed":
@@ -123,7 +123,7 @@ export function formatError(error: unknown): string {
     case "command_failed":
       return err.detail && err.detail.length > 0 ? err.detail : "L'opération a échoué.";
     case "npm_missing":
-      return "npm introuvable — installe Node.js pour utiliser cet onglet.";
+      return "npm introuvable. Installe Node.js pour utiliser cet onglet.";
     case "invalid_npm_name":
       return `Nom de paquet npm invalide : ${err.detail}`;
     case "npm_registry_failed":

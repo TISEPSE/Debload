@@ -33,7 +33,7 @@ describe("NpmLine", () => {
     const onInstall = vi.fn();
     render(<NpmLine {...props({ installed: "5.9.2", onInstall, onUninstall: noop })} />);
 
-    expect(screen.getByText(/7\.0\.2 disponible — installé : 5\.9\.2/)).toBeTruthy();
+    expect(screen.getByText(/7\.0\.2 disponible \(installé : 5\.9\.2\)/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /mettre à jour/i }));
     expect(onInstall).toHaveBeenCalled();
   });

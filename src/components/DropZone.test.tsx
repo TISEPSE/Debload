@@ -8,6 +8,17 @@ describe("DropZone", () => {
     expect(screen.getByText(/dépose/i)).toBeTruthy();
   });
 
+  it("dit ce qui arrivera au fichier avant qu'on le dépose", () => {
+    render(<DropZone active={false} onBrowse={() => {}} />);
+    expect(screen.getByText("Dépose un fichier .deb ici")).toBeTruthy();
+    expect(screen.getByText(/lira ce qu'il contient avant d'installer/i)).toBeTruthy();
+  });
+
+  it("invite à relâcher pendant le survol", () => {
+    render(<DropZone active={true} onBrowse={() => {}} />);
+    expect(screen.getByText("Relâche pour lire le fichier")).toBeTruthy();
+  });
+
   it("signale visuellement le survol d'un fichier", () => {
     const { container, rerender } = render(<DropZone active={false} onBrowse={() => {}} />);
     expect(container.querySelector(".dropzone--active")).toBeNull();

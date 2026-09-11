@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { ArrowsClockwise, Check } from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LogPanel } from "../components/LogPanel";
 import { ProgressBar } from "../components/ProgressBar";
 import { RepoLine } from "../components/RepoLine";
+import { SkeletonRows } from "../components/SkeletonRows";
 import {
   addRepo,
   formatError,
@@ -13,7 +15,7 @@ import {
   removeRepo,
   uninstallRepo,
 } from "../lib/api";
-import { jobFor } from "../lib/queue";
+import { jobFor, queuePosition } from "../lib/queue";
 import { useQueue } from "../lib/queueRunner";
 import { useReleases } from "../lib/useReleases";
 import type { Environment, LogLine, ProgressEvent, RepoRow } from "../lib/types";
@@ -225,8 +227,8 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
     [pending, reload, refreshOne],
   );
 
-  if (loading) return <p className="status">Lecture du catalogue…</p>;
-
+  // Le formulaire ne dépend pas du catalogue : il s'affiche aussitôt, et seule
+  // la liste attend de pouvoir se montrer.
   return (
     <div className="view">
       {/* Entrée installe : c'est le geste pour lequel on colle une URL.
@@ -255,7 +257,17 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
 
       <div className="repo-bar">
         <span className="repo-bar__state">
-          {checking ? "Vérification des versions…" : "Versions à jour"}
+          {checking ? (
+            <>
+              <ArrowsClockwise size={15} aria-hidden="true" />
+              Vérification des versions…
+            </>
+          ) : (
+            <>
+              <Check size={15} aria-hidden="true" />
+              Versions à jour
+            </>
+          )}
         </span>
         <button
           type="button"
@@ -285,7 +297,9 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
         <ProgressBar progress={progress} fallbackLabel="Désinstallation…" />
       )}
 
-      {rows.length === 0 ? (
+      {loading ? (
+        <SkeletonRows label="Lecture du catalogue…" />
+      ) : rows.length === 0 ? (
         <p className="empty">
           Le catalogue est vide. Ajoute un dépôt GitHub pour commencer.
         </p>
@@ -297,6 +311,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
               row={row}
               state={releases[row.slug] ?? { status: "loading" }}
               job={jobFor(jobs, row.slug)}
+              position={queuePosition(jobs, row.slug)}
               onInstall={(assetName) => enqueue(row, assetName)}
               onCancel={() => cancel(row.slug)}
               onUninstall={() => setPending(row)}

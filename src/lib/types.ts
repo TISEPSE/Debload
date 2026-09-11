@@ -87,6 +87,8 @@ export interface RepoRelease {
 export interface NpmPackage {
   name: string;
   installed: string;
+  /** Où il est installé, le dossier personnel écrit « ~ ». */
+  prefix: string;
 }
 
 /** Ce que l'onglet npm sait avant tout appel au registre. */

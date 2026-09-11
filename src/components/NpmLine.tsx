@@ -1,5 +1,8 @@
+import { Package } from "@phosphor-icons/react";
+
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
+import { StatusLine } from "./StatusLine";
 import type { LogLine } from "../lib/types";
 
 export interface NpmLineProps {
@@ -10,6 +13,8 @@ export interface NpmLineProps {
   installed: string | null;
   /** Dernière version publiée, ou `null` tant que le registre n'a pas répondu. */
   latest: string | null;
+  /** Où le paquet est installé, le dossier personnel écrit « ~ ». */
+  prefix?: string;
   /** L'opération qui travaille sur cette ligne, s'il y en a une. */
   busy: "installing" | "removing" | null;
   /** Vrai quand une autre ligne travaille : npm verrouille son dossier global. */
@@ -25,13 +30,14 @@ export interface NpmLineProps {
  * Un paquet npm, trouvé au registre ou déjà installé.
  *
  * Même grammaire qu'une ligne de « Dépôts » : ce que la ligne annonce, puis le
- * geste qui lui reste à faire — installer, mettre à jour, ou retirer.
+ * geste qui lui reste à faire (installer, mettre à jour, ou retirer).
  */
 export function NpmLine({
   name,
   description,
   installed,
   latest,
+  prefix,
   busy,
   disabled,
   failure,
@@ -40,38 +46,47 @@ export function NpmLine({
 }: NpmLineProps) {
   const updateAvailable = installed !== null && latest !== null && latest !== installed;
 
+  /** La version sous le nom : où il est installé, ou ce que le registre publie. */
+  const version =
+    installed !== null ? (prefix ? `${installed} · ${prefix}` : installed) : latest;
+
   const verdict = () => {
     if (installed === null) {
-      return latest === null ? null : <span className="repo__state">Dernière version {latest}</span>;
+      return latest === null ? null : (
+        <StatusLine tone="neutral">Dernière version {latest}</StatusLine>
+      );
     }
     if (updateAvailable) {
       return (
-        <span className="repo__state repo__state--update">
+        <StatusLine tone="update">
           {latest} disponible (installé : {installed})
-        </span>
+        </StatusLine>
       );
     }
     // Sans réponse du registre, on ne peut rien affirmer d'autre que la présence.
     return (
-      <span className="repo__state repo__state--current">
+      <StatusLine tone="current">
         {latest === null ? `Installé (${installed})` : `À jour (${installed})`}
-      </span>
+      </StatusLine>
     );
   };
 
   return (
     <li className="packages__item repo">
+      <span className="avatar" aria-hidden="true">
+        <Package size={19} />
+      </span>
+
       <div className="packages__info">
-        <span className="packages__name">{name}</span>
+        <div className="packages__heading">
+          <span className="packages__name">{name}</span>
+          {version && <span className="packages__version">{version}</span>}
+        </div>
         {description && <p className="packages__summary">{description}</p>}
 
-        {failure ? (
-          <p className="packages__date">
-            <span className="repo__state repo__state--error">{failure.message}</span>
-          </p>
-        ) : (
-          <p className="packages__date">{verdict()}</p>
-        )}
+        <p className="packages__date">
+          {failure ? <StatusLine tone="error">{failure.message}</StatusLine> : verdict()}
+        </p>
 
         {busy !== null && (
           <ProgressBar

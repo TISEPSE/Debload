@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { Info } from "@phosphor-icons/react";
+import { Avatar } from "./Avatar";
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
-import type { Job, JobState } from "../lib/queue";
+import { StatusLine } from "./StatusLine";
+import { ordinal, type Job, type JobState } from "../lib/queue";
 import type { ReleaseState } from "../lib/useReleases";
 import type { RepoRow } from "../lib/types";
 
@@ -12,6 +15,8 @@ interface RepoLineProps {
   state: ReleaseState;
   /** Présente tant que le dépôt occupe une place dans la file. */
   job?: Job;
+  /** Rang parmi les lignes qui attendent leur tour, quand celle-ci attend. */
+  position?: number | null;
   /** `assetName` vaut null quand un seul fichier convient. */
   onInstall: (assetName: string | null) => void;
   /** Sort la ligne de la file. Sans effet une fois les octets partis. */
@@ -56,20 +61,18 @@ function moving(state: JobState): boolean {
  * Ce qu'un bouton « Désinstaller » inactif doit expliquer.
  *
  * Un bouton grisé sans raison ressemble à une panne. La ligne ne sait pas
- * laquelle des trois raisons s'applique — elle ne reçoit qu'un « non » —, mais
+ * laquelle des trois raisons s'applique (elle ne reçoit qu'un « non »), mais
  * une phrase les couvre toutes, et chacune est une bonne raison.
  */
-function uninstallHint(row: RepoRow): string {
-  return row.removable
-    ? "Retirer cette application du système"
-    : "Debload ne peut pas la retirer : ce n'est pas lui qui l'a installée, " +
-        "elle n'a laissé aucun désinstalleur, ou le système la protège";
-}
+const UNREMOVABLE =
+  "Debload ne peut pas la retirer : ce n'est pas lui qui l'a installée, " +
+  "elle n'a laissé aucun désinstalleur, ou le système la protège.";
 
 export function RepoLine({
   row,
   state,
   job,
+  position = null,
   onInstall,
   onCancel,
   onUninstall,
@@ -91,40 +94,40 @@ export function RepoLine({
 
   /** Ce que la ligne annonce : à jour, mise à jour, ou pas encore installé. */
   const verdict = () => {
-    if (state.status === "loading") return <span className="repo__state">Vérification…</span>;
+    if (state.status === "loading") return <StatusLine tone="waiting">Vérification…</StatusLine>;
 
     // Une panne passagère n'est pas une erreur à traiter : Debload s'en
     // occupe déjà, la ligne le dit sans rien demander.
     if (state.status === "retrying") {
       return (
-        <span className="repo__state repo__state--waiting">
+        <StatusLine tone="waiting">
           {state.message} Nouvelle tentative automatique
           {state.attempt > 1 ? ` (essai ${state.attempt})` : ""}…
-        </span>
+        </StatusLine>
       );
     }
 
     if (state.status === "error") {
-      return <span className="repo__state repo__state--error">{state.message}</span>;
+      return <StatusLine tone="error">{state.message}</StatusLine>;
     }
 
     if (!hasAssets) {
-      return <span className="repo__state">Aucun fichier utilisable dans {ready!.tag}</span>;
+      return <StatusLine tone="neutral">Aucun fichier utilisable dans {ready!.tag}</StatusLine>;
     }
     if (ready!.updateAvailable) {
       return (
-        <span className="repo__state repo__state--update">
+        <StatusLine tone="update">
           {ready!.tag} disponible (installé : {row.installed})
-        </span>
+        </StatusLine>
       );
     }
     if (row.installed) {
-      return <span className="repo__state repo__state--current">À jour ({row.installed})</span>;
+      return <StatusLine tone="current">À jour ({row.installed})</StatusLine>;
     }
     return (
-      <span className="repo__state">
+      <StatusLine tone="neutral">
         {ready!.installable ? "Pas installé" : "Disponible"}, dernière version {ready!.tag}
-      </span>
+      </StatusLine>
     );
   };
 
@@ -137,24 +140,24 @@ export function RepoLine({
   const queueVerdict = (current: JobState) => {
     switch (current.phase) {
       case "queued":
-        return <span className="repo__state repo__state--waiting">En attente</span>;
-      case "ready":
         return (
-          <span className="repo__state repo__state--waiting">
-            Téléchargé, en attente d'installation
-          </span>
+          <StatusLine tone="waiting">
+            {position ? `En attente (${ordinal(position)} de la file)` : "En attente"}
+          </StatusLine>
         );
+      case "ready":
+        return <StatusLine tone="waiting">Téléchargé, en attente d'installation</StatusLine>;
       case "done":
-        return <span className="repo__state repo__state--current">Installé</span>;
+        return <StatusLine tone="current">Installé</StatusLine>;
       case "saved":
         return (
-          <span className="repo__state">
+          <StatusLine tone="neutral">
             Téléchargé, mais Debload ne sait pas l'installer ici :{" "}
             <code className="result__path">{current.path}</code>
-          </span>
+          </StatusLine>
         );
       case "failed":
-        return <span className="repo__state repo__state--error">{current.message}</span>;
+        return <StatusLine tone="error">{current.message}</StatusLine>;
       default:
         return null;
     }
@@ -215,19 +218,29 @@ export function RepoLine({
     );
   };
 
+  /** Vrai quand « Désinstaller » est là mais ne peut rien faire, par nature. */
+  const uninstallBlocked = !job && row.installed !== null && !row.removable;
+  const hintId = `hint-${row.slug.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
   return (
     <li className="packages__item repo">
+      <Avatar owner={row.owner} />
+
       <div className="packages__info">
-        <span className="packages__name">{row.label}</span>
-        <span className="packages__version">{row.slug}</span>
+        <div className="packages__heading">
+          <span className="packages__name">{row.label}</span>
+          <span className="packages__version">{row.slug}</span>
+        </div>
         {row.description && <p className="packages__summary">{row.description}</p>}
         <p className="packages__date">{job ? queueVerdict(job.state) : verdict()}</p>
 
         {/* Hors ligne, la ligne reste utile : elle affiche ce qu'elle sait,
             en disant depuis quand elle le sait. */}
         {!job && ready?.stale && (
-          <p className="repo__stale">
-            Hors ligne, dernière vérification {sinceLabel(ready.checkedAt)}
+          <p className="packages__date">
+            <StatusLine tone="offline">
+              Hors ligne, dernière vérification {sinceLabel(ready.checkedAt)}
+            </StatusLine>
           </p>
         )}
 
@@ -264,6 +277,15 @@ export function RepoLine({
             ))}
           </ul>
         )}
+
+        {/* Un bouton grisé sans raison ressemble à une panne : la raison est
+            écrite ici, et reliée au bouton pour le lecteur d'écran. */}
+        {uninstallBlocked && (
+          <p id={hintId} className="repo__hint">
+            <Info size={16} aria-hidden="true" />
+            {UNREMOVABLE}
+          </p>
+        )}
       </div>
 
       <div className="repo__actions">
@@ -277,7 +299,7 @@ export function RepoLine({
             className="btn btn-danger"
             disabled={!row.removable || removing}
             onClick={onUninstall}
-            title={uninstallHint(row)}
+            aria-describedby={uninstallBlocked ? hintId : undefined}
           >
             {removing ? "Suppression…" : "Désinstaller"}
           </button>

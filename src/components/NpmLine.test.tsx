@@ -48,6 +48,15 @@ describe("NpmLine", () => {
     expect(onUninstall).toHaveBeenCalled();
   });
 
+  it("écrit où le paquet est installé", () => {
+    render(
+      <NpmLine
+        {...props({ installed: "5.9.2", latest: "5.9.2", prefix: "~/.local", onUninstall: noop })}
+      />,
+    );
+    expect(screen.getByText("5.9.2 · ~/.local")).toBeTruthy();
+  });
+
   it("grise ses boutons pendant qu'une autre opération travaille", () => {
     render(<NpmLine {...props({ disabled: true })} />);
     const button = screen.getByRole("button", { name: /^installer$/i }) as HTMLButtonElement;

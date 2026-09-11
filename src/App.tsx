@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { formatError, getEnvironment, saveSettings } from "./lib/api";
+import { platformInfo } from "./lib/platforms";
 import { working } from "./lib/queue";
 import { QueueProvider, useQueueRunner } from "./lib/queueRunner";
 import type { Environment, Settings } from "./lib/types";
@@ -141,7 +142,14 @@ export default function App() {
   return (
     <div className="app">
       <header className="app__header">
-        <h1 className="app__title">Debload</h1>
+        <div className="app__bar">
+          <h1 className="app__title">Debload</h1>
+          {/* Ce que Debload sait faire ici, dit une fois pour toutes les pages. */}
+          <span className="app__system">
+            {platformInfo(environment.settings.platform ?? environment.detected).label}
+            {environment.canInstall ? " · apt disponible" : " · installeur du système"}
+          </span>
+        </div>
         <nav className="tabs" role="tablist">
           {visibleTabs.map((info) => (
             <button

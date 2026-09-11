@@ -101,7 +101,7 @@ describe("InstallView", () => {
     await waitFor(() => expect(handler.current).toBeDefined());
     act(() => handler.current!({ payload: { type: "drop", paths: ["/home/baptiste/code.deb"] } }));
 
-    fireEvent.click(await screen.findByRole("button", { name: /^installer$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^installer code$/i }));
 
     const openButton = await screen.findByRole("button", { name: /ouvrir l'application/i });
     fireEvent.click(openButton);
@@ -117,7 +117,7 @@ describe("InstallView", () => {
     await waitFor(() => expect(handler.current).toBeDefined());
     act(() => handler.current!({ payload: { type: "drop", paths: ["/home/baptiste/code.deb"] } }));
 
-    fireEvent.click(await screen.findByRole("button", { name: /^installer$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^installer code$/i }));
 
     await screen.findByRole("button", { name: /installer un autre paquet/i });
     expect(screen.queryByRole("button", { name: /ouvrir l'application/i })).toBeNull();
@@ -132,7 +132,7 @@ describe("InstallView", () => {
     await waitFor(() => expect(handler.current).toBeDefined());
     act(() => handler.current!({ payload: { type: "drop", paths: ["/home/baptiste/code.deb"] } }));
 
-    fireEvent.click(await screen.findByRole("button", { name: /^installer$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^installer code$/i }));
 
     await waitFor(() => expect(screen.getByText(/authentification annulée/i)).toBeTruthy());
   });

@@ -1,3 +1,5 @@
+import { ShieldCheck } from "@phosphor-icons/react";
+
 import type { DebInfo } from "../lib/types";
 
 interface PackageCardProps {
@@ -14,6 +16,12 @@ function formatSize(kb: number | null): string {
   return `${Math.round(kb / 1024)} Mo`;
 }
 
+/**
+ * Ce que contient un `.deb` venu d'ailleurs, avant de l'installer.
+ *
+ * C'est le seul endroit qui le dit : le bouton nomme le paquet plutôt que de
+ * se contenter d'un « Installer » qui ne dit pas quoi.
+ */
 export function PackageCard({ info, busy, onConfirm, onCancel }: PackageCardProps) {
   return (
     <section className="card">
@@ -47,6 +55,14 @@ export function PackageCard({ info, busy, onConfirm, onCancel }: PackageCardProp
         </p>
       )}
 
+      <p className="card__notice">
+        <ShieldCheck size={17} aria-hidden="true" />
+        <span>
+          Ubuntu demandera ton mot de passe une fois, au premier besoin de la session. Rien
+          n'est installé sur le système en dehors du paquet.
+        </span>
+      </p>
+
       <footer className="card__actions">
         <button type="button" className="btn btn-secondary" onClick={onCancel}>
           Annuler
@@ -57,7 +73,7 @@ export function PackageCard({ info, busy, onConfirm, onCancel }: PackageCardProp
           onClick={onConfirm}
           disabled={busy}
         >
-          {busy ? "Installation en cours…" : "Installer"}
+          {busy ? "Installation en cours…" : `Installer ${info.package}`}
         </button>
       </footer>
     </section>

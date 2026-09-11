@@ -21,6 +21,9 @@ use crate::runner::CommandRunner;
 pub struct NpmPackage {
     pub name: String,
     pub installed: String,
+    /// Où il est installé, le dossier personnel écrit `~` : la ligne le dit,
+    /// et c'est là que la mise à jour et la désinstallation viseront.
+    pub prefix: String,
 }
 
 /// Ce que l'onglet npm doit savoir avant tout appel au registre.
@@ -52,6 +55,17 @@ pub fn bin_dir(prefix: &Path) -> PathBuf {
         prefix.to_path_buf()
     } else {
         prefix.join("bin")
+    }
+}
+
+/// Un chemin tel qu'on le lit : le dossier personnel écrit `~`.
+///
+/// La comparaison se fait par composants : `/home/xy` n'est pas sous `/home/x`.
+pub fn tilde(path: &Path, home: &Path) -> String {
+    match path.strip_prefix(home) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Ok(rest) => Path::new("~").join(rest).display().to_string(),
+        Err(_) => path.display().to_string(),
     }
 }
 
@@ -164,6 +178,7 @@ pub fn status(
                 packages.push(NpmPackage {
                     name: record.name.clone(),
                     installed: version.clone(),
+                    prefix: tilde(Path::new(&record.prefix), home),
                 });
                 true
             }
@@ -179,7 +194,7 @@ pub fn status(
     NpmStatus {
         available: true,
         bin_on_path: on_path(&bin, path_var),
-        bin_dir: Some(bin.display().to_string()),
+        bin_dir: Some(tilde(&bin, home)),
         packages,
     }
 }
@@ -220,6 +235,7 @@ pub fn install(
     Ok(NpmPackage {
         name: name.to_string(),
         installed,
+        prefix: tilde(&prefix, home),
     })
 }
 
@@ -542,6 +558,16 @@ mod tests {
     }
 
     #[test]
+    fn the_home_directory_is_written_as_a_tilde() {
+        let home = Path::new("/home/x");
+        assert_eq!(tilde(Path::new("/home/x/.local"), home), "~/.local");
+        assert_eq!(tilde(Path::new("/home/x"), home), "~");
+        assert_eq!(tilde(Path::new("/usr/local"), home), "/usr/local");
+        // Un voisin qui commence pareil n'est pas le dossier personnel.
+        assert_eq!(tilde(Path::new("/home/xy/.local"), home), "/home/xy/.local");
+    }
+
+    #[test]
     fn installing_records_the_package_and_its_prefix() {
         let dir = tempfile::tempdir().unwrap();
         let store_path = dir.path().join("npm.json");
@@ -569,6 +595,8 @@ mod tests {
         .unwrap();
 
         assert_eq!(installed.installed, "7.0.2");
+        // Le préfixe voyage avec le paquet : la ligne dira où il est.
+        assert_eq!(installed.prefix, prefix);
         assert_eq!(*lines.lock().unwrap(), vec!["added 1 package"]);
         assert_eq!(
             npm_store::load(&store_path)
@@ -703,7 +731,8 @@ mod tests {
             found.packages,
             vec![NpmPackage {
                 name: "typescript".into(),
-                installed: "7.0.2".into()
+                installed: "7.0.2".into(),
+                prefix: prefix.clone(),
             }]
         );
         assert!(!found.bin_on_path);

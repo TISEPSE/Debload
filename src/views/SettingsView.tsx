@@ -205,6 +205,11 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
           {cleared ? "Caches vidés" : "Vider les caches"}
         </button>
       </section>
+
+      <p className="settings__notice">
+        Aucun privilège n'est conservé : pas de règle polkit, pas de session sudo maintenue,
+        aucun mot de passe ne traverse le code de l'application.
+      </p>
     </div>
   );
 }

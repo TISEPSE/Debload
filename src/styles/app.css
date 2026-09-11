@@ -15,10 +15,23 @@
   border-bottom: 1px solid var(--color-divider);
 }
 
+.app__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
 .app__title {
-  margin: 0 0 14px;
+  margin: 0;
   font-size: 19px;
   letter-spacing: -0.01em;
+}
+
+.app__system {
+  font-size: 12.5px;
+  color: var(--color-text-3);
 }
 
 .tabs {
@@ -314,6 +327,18 @@
   min-width: 0;
 }
 
+/* Le nom et son dépôt sur la même ligne, le dépôt en retrait de ton. */
+.packages__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.packages__heading .packages__version {
+  margin-left: 0;
+}
+
 .packages__name {
   font-size: 15px;
   font-weight: 500;
@@ -489,10 +514,24 @@
   margin-top: 10px;
 }
 
-.repo__stale {
-  margin: 4px 0 0;
+/* La raison d'un bouton inactif, écrite plutôt que devinée. */
+.repo__hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-inset);
   font-size: 13px;
-  color: var(--color-text-3);
+  line-height: 1.5;
+  color: var(--color-text-2);
+}
+
+.repo__hint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent);
 }
 
 .repo__assets {
@@ -967,6 +1006,30 @@
 }
 
 /* --- Page « npm » ------------------------------------------------------- */
+
+/* Où arrivent les commandes, et si le PATH les trouvera. */
+.npm__where {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-inset);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-2);
+}
+
+.npm__where svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-accent);
+}
+
+.npm__where .result__path {
+  margin-top: 0;
+}
 
 /* Deux listes, qu'un titre discret suffit à séparer. */
 .npm__heading {

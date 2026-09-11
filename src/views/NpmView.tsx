@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { TerminalWindow } from "@phosphor-icons/react";
 
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { NpmLine } from "../components/NpmLine";
+import { SkeletonRows } from "../components/SkeletonRows";
 import {
   formatError,
   npmInstall,
@@ -41,6 +43,8 @@ export function NpmView() {
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<NpmHit[]>([]);
   const [searchError, setSearchError] = useState<string | null>(null);
+  /** Vrai de la frappe jusqu'à la réponse du registre. */
+  const [searching, setSearching] = useState(false);
 
   const [busy, setBusy] = useState<Busy | null>(null);
   const [failures, setFailures] = useState<Record<string, Failure>>({});
@@ -89,19 +93,24 @@ export function NpmView() {
     if (text.length < 2) {
       setHits([]);
       setSearchError(null);
+      setSearching(false);
       return;
     }
 
     let cancelled = false;
+    setSearching(true);
     const timer = setTimeout(() => {
       npmSearch(text).then(
         (found) => {
           if (cancelled) return;
           setHits(found);
           setSearchError(null);
+          setSearching(false);
         },
         (error) => {
-          if (!cancelled) setSearchError(formatError(error));
+          if (cancelled) return;
+          setSearchError(formatError(error));
+          setSearching(false);
         },
       );
     }, SEARCH_DELAY_MS);
@@ -141,22 +150,20 @@ export function NpmView() {
     [reload],
   );
 
-  if (loadError) return <p className="result result--error">{loadError}</p>;
-  if (!status) return <p className="status">Lecture des paquets npm…</p>;
+  const installedPackage = (name: string) => status?.packages.find((pkg) => pkg.name === name);
 
-  if (!status.available) {
-    return <p className="empty">npm introuvable. Installe Node.js pour utiliser cet onglet.</p>;
-  }
-
-  const installedVersion = (name: string) =>
-    status.packages.find((pkg) => pkg.name === name)?.installed ?? null;
-
-  const line = (name: string, description: string | null, published: string | null, removable: boolean) => (
+  const line = (
+    name: string,
+    description: string | null,
+    published: string | null,
+    removable: boolean,
+  ) => (
     <NpmLine
       key={name}
       name={name}
       description={description}
-      installed={installedVersion(name)}
+      installed={installedPackage(name)?.installed ?? null}
+      prefix={installedPackage(name)?.prefix}
       latest={latest[name] ?? published}
       busy={busy?.name === name ? busy.kind : null}
       disabled={busy !== null}
@@ -168,6 +175,8 @@ export function NpmView() {
     />
   );
 
+  // La recherche ne dépend pas de la liste installée : elle s'affiche aussitôt,
+  // et seules les listes attendent de pouvoir se montrer.
   return (
     <div className="view">
       <form className="repo-add" role="search" onSubmit={(event) => event.preventDefault()}>
@@ -181,34 +190,54 @@ export function NpmView() {
         />
       </form>
 
-      {!status.binOnPath && status.binDir && (
-        <p className="result">
-          Les commandes s'installent dans{" "}
-          <code className="result__path">{status.binDir}</code>, qui n'est pas dans ton PATH.
-        </p>
+      {loadError && <p className="result result--error">{loadError}</p>}
+
+      {status !== null && !status.available ? (
+        <p className="empty">npm introuvable. Installe Node.js pour utiliser cet onglet.</p>
+      ) : (
+        <>
+          {status?.binDir && (
+            <p className="npm__where">
+              <TerminalWindow size={16} aria-hidden="true" />
+              <span>
+                Installation dans <code className="result__path">{status.binDir}</code>, sans
+                droits root.{" "}
+                {status.binOnPath
+                  ? "Ce dossier est bien dans ton PATH."
+                  : "Ce dossier n'est pas dans ton PATH : les commandes y resteront introuvables."}
+              </span>
+            </p>
+          )}
+
+          {searchError && <p className="result result--error">{searchError}</p>}
+
+          {(searching || hits.length > 0) && (
+            <section>
+              <h2 className="npm__heading">Registre npm</h2>
+              {searching ? (
+                <SkeletonRows label="Recherche dans le registre npm…" count={3} />
+              ) : (
+                <ul className="packages">
+                  {hits.map((hit) => line(hit.name, hit.description, hit.version, false))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          <section>
+            <h2 className="npm__heading">Installés par Debload</h2>
+            {status === null ? (
+              <SkeletonRows label="Lecture des paquets npm…" count={2} />
+            ) : status.packages.length === 0 ? (
+              <p className="empty">Aucun paquet npm pour l'instant. Cherche-en un ci-dessus.</p>
+            ) : (
+              <ul className="packages">
+                {status.packages.map((pkg) => line(pkg.name, null, null, true))}
+              </ul>
+            )}
+          </section>
+        </>
       )}
-
-      {searchError && <p className="result result--error">{searchError}</p>}
-
-      {hits.length > 0 && (
-        <section>
-          <h2 className="npm__heading">Registre npm</h2>
-          <ul className="packages">
-            {hits.map((hit) => line(hit.name, hit.description, hit.version, false))}
-          </ul>
-        </section>
-      )}
-
-      <section>
-        <h2 className="npm__heading">Installés par Debload</h2>
-        {status.packages.length === 0 ? (
-          <p className="empty">Aucun paquet npm pour l'instant. Cherche-en un ci-dessus.</p>
-        ) : (
-          <ul className="packages">
-            {status.packages.map((pkg) => line(pkg.name, null, null, true))}
-          </ul>
-        )}
-      </section>
 
       {pending && (
         <ConfirmDialog

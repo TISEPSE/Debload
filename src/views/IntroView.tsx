@@ -74,9 +74,8 @@ export function IntroView({ settings, detected, onConfirm, busy, error }: IntroV
         >
           {busy ? "Enregistrement…" : "Commencer"}
         </button>
+        <p className="intro__note">Ce choix reste modifiable dans « Paramètres ».</p>
       </div>
-
-      <p className="intro__note">Ce choix reste modifiable dans « Paramètres ».</p>
     </div>
   );
 }

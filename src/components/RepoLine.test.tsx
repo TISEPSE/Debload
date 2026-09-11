@@ -144,20 +144,21 @@ describe("RepoLine", () => {
     expect(button.disabled).toBe(true);
   });
 
-  it("annonce son tour d'attente et laisse encore sortir de la file", () => {
+  it("annonce son rang dans la file et laisse encore en sortir", () => {
     const onCancel = vi.fn();
     render(
       <RepoLine
         row={row}
         state={release()}
         job={job({ phase: "queued" })}
+        position={2}
         onInstall={noop}
         onCancel={onCancel}
         onUninstall={noop}
       />,
     );
 
-    expect(screen.getByText(/en attente/i)).toBeTruthy();
+    expect(screen.getByText(/en attente \(2ᵉ de la file\)/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /retirer de la file/i }));
     expect(onCancel).toHaveBeenCalled();
   });
@@ -302,8 +303,21 @@ describe("RepoLine", () => {
       name: /désinstaller/i,
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
-    // Un bouton grisé sans raison ressemble à une panne.
-    expect(button.title).toMatch(/ne peut pas la retirer/i);
+
+    // Un bouton grisé sans raison ressemble à une panne : la raison est écrite
+    // sous la ligne, et reliée au bouton pour le lecteur d'écran.
+    const hintId = button.getAttribute("aria-describedby");
+    expect(hintId).toBeTruthy();
+    expect(document.getElementById(hintId!)!.textContent).toMatch(/ne peut pas la retirer/i);
+  });
+
+  it("montre l'avatar du propriétaire du dépôt", () => {
+    const { container } = render(
+      <RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />,
+    );
+    expect(container.querySelector("img")!.getAttribute("src")).toBe(
+      "https://avatars.githubusercontent.com/TISEPSE?s=76",
+    );
   });
 
   it("ne laisse retirer de la liste qu'un dépôt ajouté à la main", () => {

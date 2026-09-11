@@ -277,7 +277,7 @@ describe("ReposView", () => {
 
     // Rien ne part sans confirmation.
     expect(uninstallRepo).not.toHaveBeenCalled();
-    expect(screen.getByText(/supprimer mailflow/i)).toBeTruthy();
+    expect(screen.getByText(/désinstaller mailflow \?/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /confirmer/i }));
 
@@ -298,7 +298,7 @@ describe("ReposView", () => {
     fireEvent.click(await screen.findByRole("button", { name: /désinstaller/i }));
     fireEvent.click(screen.getByRole("button", { name: /annuler/i }));
 
-    await waitFor(() => expect(screen.queryByText(/supprimer mailflow/i)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/désinstaller mailflow \?/i)).toBeNull());
     expect(uninstallRepo).not.toHaveBeenCalled();
   });
 
@@ -564,6 +564,36 @@ describe("ReposView", () => {
       expect(screen.queryByRole("button", { name: /retirer de la file/i })).toBeNull(),
     );
     expect(prepareFromRepo).toHaveBeenCalledTimes(1);
+  });
+
+  it("garde le formulaire sous la main pendant la lecture du catalogue", () => {
+    listRepos.mockImplementation(() => new Promise(() => {}));
+    render(<Harness environment={debian} />);
+
+    // Rien à attendre pour coller une URL : seule la liste patiente.
+    expect(screen.getByLabelText(/ajouter un dépôt github/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /vérifier maintenant/i })).toBeTruthy();
+  });
+
+  it("dessine des lignes fantômes quand le catalogue se fait attendre", async () => {
+    vi.useFakeTimers();
+    try {
+      listRepos.mockImplementation(() => new Promise(() => {}));
+      const { container } = render(<Harness environment={debian} />);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(container.querySelector(".skeleton")).toBeNull();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300);
+      });
+      expect(container.querySelector(".skeleton__row")).not.toBeNull();
+      expect(screen.getByRole("status").textContent).toMatch(/lecture du catalogue/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("invite à ajouter un dépôt quand le catalogue est vide", async () => {

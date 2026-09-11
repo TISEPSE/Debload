@@ -46,6 +46,16 @@ describe("PackageCard", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("nomme ce que le bouton installe", () => {
+    render(<PackageCard info={info} busy={false} onConfirm={() => {}} onCancel={() => {}} />);
+    expect(screen.getByRole("button", { name: "Installer code" })).toBeTruthy();
+  });
+
+  it("prévient que le mot de passe sera demandé", () => {
+    render(<PackageCard info={info} busy={false} onConfirm={() => {}} onCancel={() => {}} />);
+    expect(screen.getByText(/mot de passe une fois/i)).toBeTruthy();
+  });
+
   it("désactive le bouton pendant l'opération", () => {
     render(<PackageCard info={info} busy={true} onConfirm={() => {}} onCancel={() => {}} />);
     const button = screen.getByRole("button", { name: /installation/i }) as HTMLButtonElement;

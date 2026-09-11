@@ -33,7 +33,7 @@ const ready: NpmStatus = {
   available: true,
   binDir: "/home/x/.local/bin",
   binOnPath: true,
-  packages: [{ name: "typescript", installed: "5.9.2" }],
+  packages: [{ name: "typescript", installed: "5.9.2", prefix: "~/.local" }],
 };
 
 /** Rejoue une ligne de sortie comme le backend l'émettrait pendant l'opération. */
@@ -97,7 +97,7 @@ describe("NpmView", () => {
     fireEvent.click(await screen.findByRole("button", { name: /désinstaller/i }));
 
     expect(npmUninstall).not.toHaveBeenCalled();
-    expect(screen.getByText(/supprimer typescript/i)).toBeTruthy();
+    expect(screen.getByText(/désinstaller typescript \?/i)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /confirmer/i }));
     await waitFor(() => expect(npmUninstall).toHaveBeenCalledWith("typescript"));
@@ -121,5 +121,32 @@ describe("NpmView", () => {
     npmStatus.mockResolvedValue({ ...ready, binOnPath: false });
     render(<NpmView />);
     expect(await screen.findByText("/home/x/.local/bin")).toBeTruthy();
+    expect(screen.getByText(/n'est pas dans ton PATH/i)).toBeTruthy();
+  });
+
+  it("dit aussi quand les commandes installées sont bien dans le PATH", async () => {
+    render(<NpmView />);
+    expect(await screen.findByText(/bien dans ton PATH/i)).toBeTruthy();
+  });
+
+  it("garde la recherche sous la main pendant la lecture des paquets", () => {
+    npmStatus.mockImplementation(() => new Promise(() => {}));
+    render(<NpmView />);
+    // Rien à attendre pour chercher : seule la liste installée patiente.
+    expect(screen.getByLabelText(/chercher un paquet npm/i)).toBeTruthy();
+  });
+
+  it("dessine des lignes fantômes pendant une recherche qui dure", async () => {
+    npmSearch.mockImplementation(() => new Promise(() => {}));
+    const { container } = render(<NpmView />);
+    await screen.findByText("typescript");
+
+    fireEvent.change(screen.getByLabelText(/chercher un paquet npm/i), {
+      target: { value: "pnp" },
+    });
+
+    await waitFor(() => expect(npmSearch).toHaveBeenCalledWith("pnp"));
+    await waitFor(() => expect(container.querySelector(".skeleton__row")).not.toBeNull());
+    expect(screen.getByRole("status").textContent).toMatch(/recherche/i);
   });
 });

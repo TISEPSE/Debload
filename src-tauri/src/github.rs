@@ -579,6 +579,81 @@ pub fn download_label(what: &str, done: u64, total: u64) -> String {
     }
 }
 
+/// Ce que la fiche d'un dépôt dit de lui, au-delà de ses releases.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RepoInfo {
+    pub description: Option<String>,
+    /// Le site du projet, toujours une adresse web : il finit dans le navigateur.
+    pub homepage: Option<String>,
+}
+
+/// Une adresse de site qu'on peut confier au navigateur, ou rien.
+///
+/// Le champ est libre sur GitHub : on n'y garde que du `http` ou du `https`,
+/// jamais `javascript:` ni `file:`. Un domaine nu, que GitHub laisse écrire,
+/// reçoit `https://`.
+pub fn web_homepage(raw: &str) -> Option<String> {
+    let site = raw.trim();
+    if site.is_empty() || site.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let url = if site.starts_with("https://") || site.starts_with("http://") {
+        site.to_string()
+    } else if !site.contains(':') && !site.starts_with('/') && site.contains('.') {
+        format!("https://{site}")
+    } else {
+        return None;
+    };
+
+    let host = url
+        .split("://")
+        .nth(1)
+        .and_then(|rest| rest.split(['/', '?', '#']).next())
+        .unwrap_or("");
+    (!host.is_empty()).then_some(url)
+}
+
+/// Décode la fiche d'un dépôt, pour n'en garder que sa description et son site.
+pub fn parse_repo_info(json: &str) -> Result<RepoInfo, DebloadError> {
+    #[derive(Deserialize)]
+    struct Raw {
+        description: Option<String>,
+        homepage: Option<String>,
+    }
+
+    let raw: Raw =
+        serde_json::from_str(json).map_err(|e| DebloadError::GithubFailed(e.to_string()))?;
+    Ok(RepoInfo {
+        description: raw
+            .description
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty()),
+        homepage: raw.homepage.as_deref().and_then(web_homepage),
+    })
+}
+
+/// Lit la fiche d'un dépôt. Une seule tentative : c'est un complément, qui ne
+/// doit pas faire attendre l'ajout du dépôt.
+pub fn fetch_repo_info(repo: &RepoRef, token: Option<&str>) -> Result<RepoInfo, DebloadError> {
+    let url = format!("https://api.github.com/repos/{}/{}", repo.owner, repo.repo);
+
+    let mut request = agent()
+        .get(&url)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28");
+    if let Some(token) = token {
+        request = request.header("Authorization", &format!("Bearer {token}"));
+    }
+
+    let body = request
+        .call()
+        .and_then(|mut response| response.body_mut().read_to_string())
+        .map_err(transport_error)?;
+
+    parse_repo_info(&body)
+}
+
 /// Une taille d'octets telle qu'on la lit dans une phrase.
 pub fn human_size(bytes: u64) -> String {
     const MO: f64 = 1024.0 * 1024.0;
@@ -606,6 +681,50 @@ mod tests {
             url: format!("https://github.com/o/r/releases/download/v1/{name}"),
             size: 1024,
         }
+    }
+
+    #[test]
+    fn keeps_only_web_addresses_for_a_site() {
+        assert_eq!(
+            web_homepage("https://localsend.org").as_deref(),
+            Some("https://localsend.org")
+        );
+        assert_eq!(
+            web_homepage("  http://example.com/x ").as_deref(),
+            Some("http://example.com/x")
+        );
+        // GitHub laisse écrire un domaine nu : le navigateur, lui, veut un protocole.
+        assert_eq!(web_homepage("jan.ai").as_deref(), Some("https://jan.ai"));
+        for bad in [
+            "",
+            "   ",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "ftp://example.org",
+            "pas un site",
+            "localhost",
+            "https://",
+            "https://exa mple.org",
+        ] {
+            assert_eq!(web_homepage(bad), None, "accepté à tort : {bad:?}");
+        }
+    }
+
+    #[test]
+    fn reads_the_description_and_site_of_a_repo() {
+        let info = parse_repo_info(
+            r#"{"description":"An open-source alternative to AirDrop","homepage":"https://localsend.org","stargazers_count":1}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            info.description.as_deref(),
+            Some("An open-source alternative to AirDrop")
+        );
+        assert_eq!(info.homepage.as_deref(), Some("https://localsend.org"));
+
+        // Rien de déclaré, ou une chaîne vide : rien à montrer.
+        let bare = parse_repo_info(r#"{"description":null,"homepage":""}"#).unwrap();
+        assert_eq!(bare, RepoInfo::default());
     }
 
     #[test]

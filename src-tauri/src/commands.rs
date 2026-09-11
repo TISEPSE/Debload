@@ -1348,11 +1348,34 @@ pub async fn refresh_repo(
 /// L'interface a pu envoyer une URL : c'est par le slug qu'elle retrouve la
 /// ligne sur laquelle enchaîner l'installation.
 #[tauri::command]
-pub fn add_repo(input: String, state: State<'_, AppState>) -> Result<String, DebloadError> {
-    let mut user = repos::load_user(&state.repos_path);
-    let repo = repo_ops::add(&mut user, &input)?;
-    repos::save_user(&state.repos_path, &user)?;
-    Ok(repo.slug())
+pub async fn add_repo(input: String, state: State<'_, AppState>) -> Result<String, DebloadError> {
+    let runner = state.runner.clone();
+    let repos_path = state.repos_path.clone();
+    let settings_path = state.settings_path.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut user = repos::load_user(&repos_path);
+        let repo = repo_ops::add(&mut user, &input)?;
+        repos::save_user(&repos_path, &user)?;
+
+        // La description et le site viennent de la fiche GitHub, lue une seule
+        // fois ici : la page s'affiche ensuite sans la redemander. Sans réseau,
+        // le dépôt reste ajouté, simplement moins décrit.
+        let settings = settings::load(&settings_path);
+        let token = settings
+            .use_gh_token
+            .then(|| github::cached_gh_token(runner.as_ref()))
+            .flatten();
+        if let Ok(info) = github::fetch_repo_info(&repo, token.as_deref()) {
+            let mut user = repos::load_user(&repos_path);
+            user.describe(&repo.slug(), info);
+            repos::save_user(&repos_path, &user)?;
+        }
+
+        Ok(repo.slug())
+    })
+    .await
+    .map_err(|e| DebloadError::Io(e.to_string()))?
 }
 
 /// Retire un dépôt : définitivement s'il avait été ajouté à la main, en le

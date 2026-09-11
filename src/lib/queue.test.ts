@@ -19,6 +19,7 @@ function row(slug: string): RepoRow {
     repo: slug.split("/")[1],
     label: slug.split("/")[1],
     description: null,
+    homepage: null,
     package: null,
     installed: null,
     removable: false,

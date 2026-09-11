@@ -1054,14 +1054,6 @@
 
 /* --- Cartes de dépôts ---------------------------------------------------- */
 
-/* Les boutons d'une même rangée se partagent la largeur à parts égales :
-   « GitHub » est aussi grand que « Installer ». Un bouton qui ne tient plus
-   passe à la ligne entier, sans que son texte se coupe. */
-.tile__actions > .btn {
-  flex: 1 1 0;
-  white-space: nowrap;
-}
-
 /* Le verdict d'une carte, et ce qui s'y ajoute pendant une installation. */
 .tile__status {
   margin: 0;
@@ -1069,24 +1061,59 @@
   color: var(--color-text-3);
 }
 
-/* Les boutons passent à la ligne quand la carte est étroite. « Retirer »,
-   plus rare, se réduit à son icône et se range à droite. */
+/* Tous les boutons d'une carte restent côte à côte, sur une seule rangée : le
+   geste principal et « GitHub » se partagent la place, écrits en toutes
+   lettres ; « Désinstaller » et « Retirer », plus rares, se réduisent à une
+   icône carrée. */
 .tile__actions {
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 
-.tile__actions > .tile__forget {
+.tile__actions > .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-inline: 10px;
+  white-space: nowrap;
+}
+
+.tile__actions > .tile__icon {
   flex: none;
-  min-width: 44px;
-  min-height: 44px;
-  margin-left: auto;
+  width: 40px;
   padding-inline: 0;
-  color: var(--color-text-3);
 }
 
-.tile__forget:hover:not(:disabled) {
-  color: var(--color-danger);
+/* Les cartes de dépôt, un peu plus larges que celles de npm : leur rangée
+   porte jusqu'à quatre boutons. */
+.tile-grid--repos {
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+}
+
+/* Le site du projet, sous son nom : un lien qui ouvre le navigateur. */
+.tile__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tile__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.tile__link svg {
+  flex: none;
 }
 
 .tile .repo__hint,

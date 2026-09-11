@@ -317,7 +317,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
           Le catalogue est vide. Ajoute un dépôt GitHub pour commencer.
         </p>
       ) : (
-        <ul className="tile-grid">
+        <ul className="tile-grid tile-grid--repos">
           {rows.map((row) => (
             <RepoLine
               key={row.slug}

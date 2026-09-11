@@ -13,6 +13,7 @@ const row: RepoRow = {
   repo: "MailFlow",
   label: "MailFlow",
   description: "Tri automatique de la boîte Gmail",
+  homepage: null,
   package: "mail-flow",
   installed: "0.1.8",
   removable: true,
@@ -339,6 +340,59 @@ describe("RepoLine", () => {
     );
     fireEvent.click(github);
     expect(openUrl).toHaveBeenCalledWith("https://github.com/TISEPSE/MailFlow");
+  });
+
+  it("affiche le site du projet et l'ouvre d'un clic", () => {
+    openUrl.mockResolvedValue(undefined);
+    render(
+      <RepoLine
+        row={{ ...row, homepage: "https://www.localsend.org/" }}
+        state={release()}
+        onInstall={noop}
+        onUninstall={noop}
+      />,
+    );
+    // L'adresse se lit sans son protocole, et reste entière pour le navigateur.
+    expect(screen.getByText("localsend.org")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Visiter le site de MailFlow" }));
+    expect(openUrl).toHaveBeenCalledWith("https://www.localsend.org/");
+  });
+
+  it("garde le chemin d'un site qui vit dans une sous-partie", () => {
+    render(
+      <RepoLine
+        row={{ ...row, homepage: "https://tinyhumans.ai/openhuman" }}
+        state={release()}
+        onInstall={noop}
+        onUninstall={noop}
+      />,
+    );
+    expect(screen.getByText("tinyhumans.ai/openhuman")).toBeTruthy();
+  });
+
+  it("garde ses boutons côte à côte : les gestes rares se réduisent à leur icône", () => {
+    render(
+      <RepoLine
+        row={{ ...row, bundled: false }}
+        state={release()}
+        onInstall={noop}
+        onUninstall={noop}
+        onForget={noop}
+      />,
+    );
+    const uninstall = screen.getByRole("button", { name: "Désinstaller" });
+    expect(uninstall.textContent).toBe("");
+    expect(uninstall.getAttribute("title")).toBe("Désinstaller");
+    expect(screen.getByRole("button", { name: "Retirer" }).textContent).toBe("");
+    // Seuls le geste principal et GitHub restent écrits en toutes lettres.
+    expect(screen.getByRole("button", { name: /mettre à jour/i }).textContent).toBe(
+      "Mettre à jour",
+    );
+  });
+
+  it("ne montre aucun site quand le dépôt n'en déclare pas", () => {
+    render(<RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />);
+    expect(screen.queryByRole("button", { name: /visiter le site/i })).toBeNull();
   });
 
   it("garde le lien vers GitHub même quand la vérification échoue", () => {

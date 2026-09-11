@@ -50,12 +50,15 @@ export const removeRepo = (slug: string) => invoke<void>("remove_repo", { slug }
 export const repoPageUrl = (owner: string, repo: string) =>
   `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 
-/**
- * Ouvre la page GitHub d'un dépôt dans le navigateur. La capacité de la
- * fenêtre n'autorise que des adresses GitHub : rien d'autre ne peut s'ouvrir.
- */
+/** Ouvre la page GitHub d'un dépôt dans le navigateur. */
 export const openRepoPage = (owner: string, repo: string) =>
   openUrl(repoPageUrl(owner, repo));
+
+/**
+ * Ouvre le site d'un projet. L'adresse a été vérifiée côté Rust, et la
+ * capacité de la fenêtre n'ouvre que du `http` ou du `https`.
+ */
+export const openWebsite = (url: string) => openUrl(url);
 
 export const prepareFromRepo = (slug: string, assetName: string | null) =>
   invoke<DebInfo>("prepare_from_repo", { slug, assetName });

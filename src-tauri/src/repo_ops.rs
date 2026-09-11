@@ -31,6 +31,8 @@ pub struct RepoRow {
     pub repo: String,
     pub label: String,
     pub description: Option<String>,
+    /// Le site du projet, quand le catalogue ou sa fiche GitHub en donne un.
+    pub homepage: Option<String>,
     /// Paquet livré par ce dépôt, connu seulement après une première
     /// installation.
     pub package: Option<String>,
@@ -262,6 +264,7 @@ pub fn rows(
                 owner: entry.owner,
                 repo: entry.repo,
                 description: entry.description,
+                homepage: entry.homepage,
                 package,
                 installed: found.version,
                 removable: found.removable,
@@ -555,6 +558,7 @@ pub fn add(user: &mut UserRepos, input: &str) -> Result<RepoRef, DebloadError> {
         repo: repo.repo.clone(),
         label: None,
         description: None,
+        homepage: None,
     });
     Ok(repo)
 }
@@ -579,8 +583,22 @@ mod tests {
                 repo: "MailFlow".into(),
                 label: Some("MailFlow".into()),
                 description: Some("Tri Gmail".into()),
+                homepage: Some("https://mailflow.example".into()),
             }],
         }
+    }
+
+    #[test]
+    fn a_row_carries_the_site_of_its_repo() {
+        let rows = rows(
+            &FakeRunner::new(),
+            &catalog(),
+            &UserRepos::default(),
+            Platform::Debian,
+            &[],
+            &History::new(),
+        );
+        assert_eq!(rows[0].homepage.as_deref(), Some("https://mailflow.example"));
     }
 
     #[test]
@@ -869,6 +887,7 @@ mod tests {
                 repo: "HeroicGamesLauncher".into(),
                 label: Some("Heroic Games Launcher".into()),
                 description: None,
+                homepage: None,
             }],
         };
         let apps = vec![win_apps::InstalledApp {

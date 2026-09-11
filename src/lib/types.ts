@@ -50,6 +50,8 @@ export interface RepoRow {
   repo: string;
   label: string;
   description: string | null;
+  /** Le site du projet, toujours une adresse web. */
+  homepage: string | null;
   /** Paquet livré, connu seulement après une première installation. */
   package: string | null;
   installed: string | null;

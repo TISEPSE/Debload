@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::error::DebloadError;
-use crate::github::RepoRef;
+use crate::github::{RepoInfo, RepoRef};
 
 /// Emplacement du catalogue installé par le paquet.
 pub const BUNDLED_PATH: &str = "/usr/share/debload/repos.json";
@@ -34,6 +34,9 @@ pub struct CatalogEntry {
     pub label: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
+    /// Le site du projet, quand il en a un : une adresse web, rien d'autre.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub homepage: Option<String>,
 }
 
 impl CatalogEntry {
@@ -153,6 +156,21 @@ impl UserRepos {
         }
     }
 
+    /// Complète un dépôt ajouté à la main de ce que sa fiche GitHub en dit.
+    ///
+    /// Ce qui est déjà connu ne s'écrase pas, et un dépôt absent de la liste
+    /// n'y entre pas pour autant.
+    pub fn describe(&mut self, slug: &str, info: RepoInfo) {
+        if let Some(entry) = self.added.iter_mut().find(|e| e.slug() == slug) {
+            if entry.description.is_none() {
+                entry.description = info.description;
+            }
+            if entry.homepage.is_none() {
+                entry.homepage = info.homepage;
+            }
+        }
+    }
+
     pub fn forget_install(&mut self, slug: &str) {
         self.installs.retain(|r| r.slug != slug);
     }
@@ -268,6 +286,7 @@ mod tests {
             repo: repo.into(),
             label: None,
             description: None,
+            homepage: None,
         }
     }
 
@@ -416,6 +435,7 @@ mod tests {
                 repo: "HeroicGamesLauncher".into(),
                 label: Some("Heroic Games Launcher".into()),
                 description: None,
+                homepage: None,
             }],
         };
         assert_eq!(
@@ -428,6 +448,46 @@ mod tests {
             display_names(&catalog(), &user, "microsoft/vscode"),
             vec!["vscode"]
         );
+    }
+
+    #[test]
+    fn the_bundled_catalog_only_links_to_web_sites() {
+        let catalog: Catalog = serde_json::from_str(FALLBACK).unwrap();
+        assert!(catalog.entries.iter().any(|e| e.homepage.is_some()));
+        for e in &catalog.entries {
+            if let Some(site) = &e.homepage {
+                assert_eq!(
+                    crate::github::web_homepage(site).as_ref(),
+                    Some(site),
+                    "site douteux pour {}",
+                    e.slug()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_repo_added_by_hand_learns_its_description_and_site() {
+        let mut user = UserRepos::default();
+        user.add(entry("localsend", "localsend"));
+        user.describe(
+            "localsend/localsend",
+            RepoInfo {
+                description: Some("An open-source alternative to AirDrop".into()),
+                homepage: Some("https://localsend.org".into()),
+            },
+        );
+
+        let added = &user.added[0];
+        assert_eq!(
+            added.description.as_deref(),
+            Some("An open-source alternative to AirDrop")
+        );
+        assert_eq!(added.homepage.as_deref(), Some("https://localsend.org"));
+
+        // Un dépôt qui n'est pas dans la liste n'apparaît pas pour autant.
+        user.describe("microsoft/vscode", RepoInfo::default());
+        assert_eq!(user.added.len(), 1);
     }
 
     #[test]

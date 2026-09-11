@@ -3,6 +3,7 @@ import {
   ArrowClockwise,
   DownloadSimple,
   GithubLogo,
+  Globe,
   Info,
   ListBullets,
   MinusCircle,
@@ -13,7 +14,7 @@ import { Avatar } from "./Avatar";
 import { LogPanel } from "./LogPanel";
 import { ProgressBar } from "./ProgressBar";
 import { StatusLine } from "./StatusLine";
-import { openRepoPage } from "../lib/api";
+import { openRepoPage, openWebsite } from "../lib/api";
 import { ordinal, type Job, type JobState } from "../lib/queue";
 import type { ReleaseState } from "../lib/useReleases";
 import type { RepoRow } from "../lib/types";
@@ -60,6 +61,20 @@ export function sinceLabel(checkedAt: number, now = Date.now()): string {
   if (seconds < 3600) return `il y a ${Math.floor(seconds / 60)} min`;
   if (seconds < 172_800) return `il y a ${Math.floor(seconds / 3600)} h`;
   return `il y a ${Math.floor(seconds / 86_400)} jours`;
+}
+
+/**
+ * L'adresse d'un site telle qu'on la lit : sans protocole, sans « www. » ni
+ * barre finale. Le chemin reste quand le site vit dans une sous-partie.
+ */
+export function siteLabel(url: string): string {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname === "/" ? "" : parsed.pathname.replace(/\/$/, "");
+    return parsed.host.replace(/^www\./, "") + path;
+  } catch {
+    return url;
+  }
 }
 
 /** Vrai quand des octets circulent : la ligne ne peut plus être interrompue. */
@@ -240,6 +255,7 @@ export function RepoLine({
   /** Vrai quand « Désinstaller » est là mais ne peut rien faire, par nature. */
   const uninstallBlocked = !job && row.installed !== null && !row.removable;
   const hintId = `hint-${row.slug.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+  const homepage = row.homepage;
 
   // Une carte, comme dans l'onglet npm : une grille montre bien plus de dépôts
   // qu'une liste de lignes pleine largeur.
@@ -257,6 +273,20 @@ export function RepoLine({
                 <GithubLogo size={13} aria-hidden="true" />
                 {row.slug}
               </span>
+              {/* Le site du projet, quand il en déclare un : un clic l'ouvre
+                  dans le navigateur. */}
+              {homepage && (
+                <button
+                  type="button"
+                  className="tile__link"
+                  aria-label={`Visiter le site de ${row.label}`}
+                  title={homepage}
+                  onClick={() => void openWebsite(homepage).catch(() => {})}
+                >
+                  <Globe size={13} aria-hidden="true" />
+                  {siteLabel(homepage)}
+                </button>
+              )}
             </span>
           </div>
         </header>
@@ -340,22 +370,24 @@ export function RepoLine({
           {!job && row.installed !== null && (
             <button
               type="button"
-              className="btn btn-danger"
+              className="btn btn-danger tile__icon"
               disabled={!row.removable || removing}
               onClick={onUninstall}
+              aria-label={removing ? "Suppression…" : "Désinstaller"}
+              title={removing ? "Suppression…" : "Désinstaller"}
               aria-describedby={uninstallBlocked ? hintId : undefined}
             >
-              <Trash size={16} aria-hidden="true" />
-              {removing ? "Suppression…" : "Désinstaller"}
+              <Trash size={18} aria-hidden="true" />
             </button>
           )}
 
-          {/* Plus rare, « Retirer » se réduit à son icône : le lecteur d'écran
-              entend son nom, la souris lit l'infobulle. */}
+          {/* Tous les boutons restent côte à côte : « Désinstaller » et
+              « Retirer », plus rares, se réduisent à leur icône. Le lecteur
+              d'écran entend leur nom, la souris lit l'infobulle. */}
           {onForget && (
             <button
               type="button"
-              className="btn btn-ghost tile__forget"
+              className="btn btn-secondary tile__icon"
               disabled={(job !== undefined && moving(job.state)) || removing}
               onClick={onForget}
               aria-label="Retirer"

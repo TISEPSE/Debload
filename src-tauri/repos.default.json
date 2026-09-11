@@ -10,7 +10,8 @@
       "owner": "localsend",
       "repo": "localsend",
       "label": "LocalSend",
-      "description": "An open-source cross-platform alternative to AirDrop"
+      "description": "An open-source cross-platform alternative to AirDrop",
+      "homepage": "https://localsend.org"
     },
     {
       "owner": "TISEPSE",
@@ -22,43 +23,50 @@
       "owner": "tinyhumansai",
       "repo": "openhuman",
       "label": "OpenHuman",
-      "description": "Your Personal AI super intelligence. A brain that builds a local-first memory of your life, a fantastic orc…"
+      "description": "Your Personal AI super intelligence. A brain that builds a local-first memory of your life, a fantastic orc…",
+      "homepage": "https://tinyhumans.ai/openhuman"
     },
     {
       "owner": "usememos",
       "repo": "memos",
       "label": "Memos",
-      "description": "Open-source, self-hosted note-taking tool built for quick capture. Markdown-native, lightweight, and fully…"
+      "description": "Open-source, self-hosted note-taking tool built for quick capture. Markdown-native, lightweight, and fully…",
+      "homepage": "https://usememos.com"
     },
     {
       "owner": "rustdesk",
       "repo": "rustdesk",
       "label": "RustDesk",
-      "description": "An open-source remote desktop application designed for self-hosting, as an alternative to TeamViewer."
+      "description": "An open-source remote desktop application designed for self-hosting, as an alternative to TeamViewer.",
+      "homepage": "https://rustdesk.com"
     },
     {
       "owner": "Heroic-Games-Launcher",
       "repo": "HeroicGamesLauncher",
       "label": "Heroic Games Launcher",
-      "description": "A games launcher for GOG, Amazon and Epic Games for Linux, Windows and macOS."
+      "description": "A games launcher for GOG, Amazon and Epic Games for Linux, Windows and macOS.",
+      "homepage": "https://heroicgameslauncher.com"
     },
     {
       "owner": "cryptomator",
       "repo": "cryptomator",
       "label": "Cryptomator",
-      "description": "Cryptomator for Windows, macOS, and Linux: Secure client-side encryption for your cloud storage, ensuring p…"
+      "description": "Cryptomator for Windows, macOS, and Linux: Secure client-side encryption for your cloud storage, ensuring p…",
+      "homepage": "https://cryptomator.org"
     },
     {
       "owner": "Eugeny",
       "repo": "tabby",
       "label": "Tabby",
-      "description": "A terminal for a more modern age"
+      "description": "A terminal for a more modern age",
+      "homepage": "https://tabby.sh"
     },
     {
       "owner": "upscayl",
       "repo": "upscayl",
       "label": "Upscayl",
-      "description": "🆙 Upscayl - #1 Free and Open Source AI Image Upscaler for Linux, MacOS and Windows."
+      "description": "🆙 Upscayl - #1 Free and Open Source AI Image Upscaler for Linux, MacOS and Windows.",
+      "homepage": "https://upscayl.org"
     },
     {
       "owner": "th-ch",
@@ -70,43 +78,50 @@
       "owner": "KRTirtho",
       "repo": "spotube",
       "label": "Spotube",
-      "description": "🎧 Open source music streaming app! Available for both desktop & mobile!"
+      "description": "🎧 Open source music streaming app! Available for both desktop & mobile!",
+      "homepage": "https://spotube.cc/"
     },
     {
       "owner": "nukeop",
       "repo": "nuclear",
       "label": "Nuclear",
-      "description": "Streaming music player that finds free music for you"
+      "description": "Streaming music player that finds free music for you",
+      "homepage": "https://nuclearplayer.com"
     },
     {
       "owner": "jeffvli",
       "repo": "feishin",
       "label": "Feishin",
-      "description": "A modern self-hosted music player."
+      "description": "A modern self-hosted music player.",
+      "homepage": "https://feishin.vercel.app"
     },
     {
       "owner": "agalwood",
       "repo": "Motrix",
       "label": "Motrix",
-      "description": "A full-featured download manager."
+      "description": "A full-featured download manager.",
+      "homepage": "https://motrix.app"
     },
     {
       "owner": "pot-app",
       "repo": "pot-desktop",
       "label": "Pot",
-      "description": "🌈一个跨平台的划词翻译和OCR软件 | A cross-platform software for text translation and recognition."
+      "description": "🌈一个跨平台的划词翻译和OCR软件 | A cross-platform software for text translation and recognition.",
+      "homepage": "https://pot-app.com"
     },
     {
       "owner": "janhq",
       "repo": "jan",
       "label": "Jan",
-      "description": "Jan is an open source alternative to ChatGPT that runs 100% offline on your computer."
+      "description": "Jan is an open source alternative to ChatGPT that runs 100% offline on your computer.",
+      "homepage": "https://jan.ai/"
     },
     {
       "owner": "ferdium",
       "repo": "ferdium-app",
       "label": "Ferdium",
-      "description": "All your services in one place, built by the community"
+      "description": "All your services in one place, built by the community",
+      "homepage": "https://ferdium.org"
     },
     {
       "owner": "mattermost",
@@ -118,7 +133,8 @@
       "owner": "netbirdio",
       "repo": "netbird",
       "label": "NetBird",
-      "description": "Connect your devices into a secure WireGuard®-based overlay network with SSO, MFA and granular access contr…"
+      "description": "Connect your devices into a secure WireGuard®-based overlay network with SSO, MFA and granular access contr…",
+      "homepage": "https://netbird.io"
     }
   ]
 }

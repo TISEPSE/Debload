@@ -85,8 +85,8 @@ describe("RepoLine", () => {
     expect(screen.getByRole("button", { name: /désinstaller/i })).toBeTruthy();
   });
 
-  it("distingue un dépôt jamais installé", () => {
-    render(
+  it("se tait sur un dépôt jamais installé : le bouton suffit à le dire", () => {
+    const { container } = render(
       <RepoLine
         row={fresh}
         state={release({ updateAvailable: false })}
@@ -94,7 +94,10 @@ describe("RepoLine", () => {
         onUninstall={noop}
       />,
     );
-    expect(screen.getByText(/pas installé/i)).toBeTruthy();
+    expect(screen.queryByText(/pas installé|dernière version/i)).toBeNull();
+    // Pas de ligne vide qui garderait sa place dans la carte.
+    expect(container.querySelector(".tile__status")).toBeNull();
+    expect(screen.getByRole("button", { name: /^installer$/i })).toBeTruthy();
   });
 
   it("installe directement quand un seul paquet convient", () => {
@@ -267,7 +270,7 @@ describe("RepoLine", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /télécharger/i })).toBeTruthy();
-    expect(screen.getByText(/disponible, dernière version/i)).toBeTruthy();
+    expect(screen.queryByText(/dernière version/i)).toBeNull();
   });
 
   it("propose de mettre à jour et de désinstaller côte à côte", () => {

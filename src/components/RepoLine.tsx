@@ -117,7 +117,7 @@ export function RepoLine({
   const hasAssets = (ready?.assets.length ?? 0) > 0;
   const severalAssets = (ready?.assets.length ?? 0) > 1;
 
-  /** Ce que la ligne annonce : à jour, mise à jour, ou pas encore installé. */
+  /** Ce que la carte annonce : à jour, mise à jour, ou rien quand le bouton suffit. */
   const verdict = () => {
     if (state.status === "loading") return <StatusLine tone="waiting">Vérification…</StatusLine>;
 
@@ -149,11 +149,9 @@ export function RepoLine({
     if (row.installed) {
       return <StatusLine tone="current">À jour ({row.installed})</StatusLine>;
     }
-    return (
-      <StatusLine tone="neutral">
-        {ready!.installable ? "Pas installé" : "Disponible"}, dernière version {ready!.tag}
-      </StatusLine>
-    );
+    // Rien d'installé : le bouton « Installer » ou « Télécharger » le dit déjà,
+    // la carte n'a pas besoin d'une ligne de plus.
+    return null;
   };
 
   /**
@@ -256,6 +254,7 @@ export function RepoLine({
   const uninstallBlocked = !job && row.installed !== null && !row.removable;
   const hintId = `hint-${row.slug.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
   const homepage = row.homepage;
+  const statusLine = job ? queueVerdict(job.state) : verdict();
 
   // Une carte, comme dans l'onglet npm : une grille montre bien plus de dépôts
   // qu'une liste de lignes pleine largeur.
@@ -294,7 +293,8 @@ export function RepoLine({
         </header>
 
         {row.description && <p className="tile__description">{row.description}</p>}
-        <p className="tile__status">{job ? queueVerdict(job.state) : verdict()}</p>
+        {/* Pas de ligne vide quand il n'y a rien à dire : la carte reste compacte. */}
+        {statusLine && <p className="tile__status">{statusLine}</p>}
 
         {/* Hors ligne, la carte reste utile : elle affiche ce qu'elle sait,
             en disant depuis quand elle le sait. */}

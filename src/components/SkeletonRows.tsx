@@ -37,10 +37,10 @@ export function SkeletonRows({ label, count = 4, delayMs = 250, layout = "rows" 
         {label}
       </p>
       {layout === "cards" ? (
-        <ul className="npm-grid skeleton__rows" aria-hidden="true">
+        <ul className="tile-grid skeleton__rows" aria-hidden="true">
           {items.map((index) => (
-            <li key={index} className="npm-card skeleton__row">
-              <span className="npm-card__header">
+            <li key={index} className="tile skeleton__row">
+              <span className="tile__header">
                 <span className="skeleton__block skeleton__tile skeleton__tile--large" />
                 <span className="skeleton__lines">
                   <span className="skeleton__block skeleton__line skeleton__line--title" />

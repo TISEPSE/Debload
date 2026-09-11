@@ -92,7 +92,7 @@ describe("NpmView", () => {
     expect(await screen.findByText("pnpm")).toBeTruthy();
     expect(npmSearch).toHaveBeenCalledWith("pnp", 0);
     // Les résultats aussi sont des cartes, avec le logo du projet.
-    expect(container.querySelector('.npm-grid img[src*="/pnpm?"]')).not.toBeNull();
+    expect(container.querySelector('.tile-grid img[src*="/pnpm?"]')).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Installer pnpm" }));
     await waitFor(() => expect(npmInstall).toHaveBeenCalledWith("pnpm"));
@@ -150,7 +150,7 @@ describe("NpmView", () => {
     expect(await screen.findByText("cowsay")).toBeTruthy();
     expect(npmBrowse).toHaveBeenCalledWith(0);
     // En grille de cartes, pas en lignes pleine largeur : il y en a des milliers.
-    expect(container.querySelector('.npm-grid img[src*="/piuccio?"]')).not.toBeNull();
+    expect(container.querySelector('.tile-grid img[src*="/piuccio?"]')).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /afficher plus/i }));
     expect(await screen.findByText("qrcode-terminal")).toBeTruthy();

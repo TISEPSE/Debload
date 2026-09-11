@@ -311,13 +311,13 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
       )}
 
       {loading ? (
-        <SkeletonRows label="Lecture du catalogue…" />
+        <SkeletonRows label="Lecture du catalogue…" count={6} layout="cards" />
       ) : rows.length === 0 ? (
         <p className="empty">
           Le catalogue est vide. Ajoute un dépôt GitHub pour commencer.
         </p>
       ) : (
-        <ul className="packages">
+        <ul className="tile-grid">
           {rows.map((row) => (
             <RepoLine
               key={row.slug}

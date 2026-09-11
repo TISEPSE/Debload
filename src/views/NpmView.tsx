@@ -350,7 +350,7 @@ export function NpmView() {
                       <GroupIcon size={16} aria-hidden="true" />
                       {group.title}
                     </h3>
-                    <ul className="npm-grid">
+                    <ul className="tile-grid">
                       {items.map((item) => (
                         <li key={item.name}>
                           <NpmCard
@@ -385,7 +385,7 @@ export function NpmView() {
                 <SkeletonRows label="Lecture du registre npm…" count={8} layout="cards" />
               ) : (
                 <>
-                  <ul className="npm-grid">{browsed.map(card)}</ul>
+                  <ul className="tile-grid">{browsed.map(card)}</ul>
                   {browseNext < browseTotal && (
                     <button
                       type="button"
@@ -412,7 +412,7 @@ export function NpmView() {
                 <SkeletonRows label="Recherche dans le registre npm…" count={8} layout="cards" />
               ) : (
                 <>
-                  <ul className="npm-grid">{hits.map(card)}</ul>
+                  <ul className="tile-grid">{hits.map(card)}</ul>
                   {/* Le registre en a davantage : la suite se charge à la demande,
                       autant de fois qu'on veut. */}
                   {searchNext < total && (

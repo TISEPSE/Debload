@@ -75,23 +75,23 @@ export function NpmCard({
   };
 
   return (
-    <article className="npm-card">
-      <header className="npm-card__header">
+    <article className="tile">
+      <header className="tile__header">
         <Avatar owner={owner} large />
-        <div className="npm-card__identity">
-          <span className="npm-card__name" title={name}>
+        <div className="tile__identity">
+          <span className="tile__name" title={name}>
             {name}
           </span>
           {(command || version) && (
-            <span className="npm-card__meta">
+            <span className="tile__meta">
               {command && (
-                <code className="npm-card__command">
+                <code className="tile__command">
                   <Terminal size={13} aria-hidden="true" />
                   {command}
                 </code>
               )}
               {version && (
-                <span className="npm-card__version">
+                <span className="tile__version">
                   <Tag size={13} aria-hidden="true" />
                   {version}
                 </span>
@@ -101,7 +101,7 @@ export function NpmCard({
         </div>
       </header>
 
-      {description && <p className="npm-card__description">{description}</p>}
+      {description && <p className="tile__description">{description}</p>}
 
       {failure && (
         <>
@@ -115,7 +115,7 @@ export function NpmCard({
         </>
       )}
 
-      <div className="npm-card__footer">{action()}</div>
+      <div className="tile__footer">{action()}</div>
     </article>
   );
 }

@@ -311,13 +311,16 @@ describe("RepoLine", () => {
     expect(document.getElementById(hintId!)!.textContent).toMatch(/ne peut pas la retirer/i);
   });
 
-  it("montre l'avatar du propriétaire du dépôt", () => {
+  it("se présente en carte, avec l'avatar du propriétaire du dépôt", () => {
     const { container } = render(
       <RepoLine row={row} state={release()} onInstall={noop} onUninstall={noop} />,
     );
-    expect(container.querySelector("img")!.getAttribute("src")).toBe(
-      "https://avatars.githubusercontent.com/TISEPSE?s=76",
+    // La même carte que l'onglet npm : une grille montre plus de dépôts qu'une liste.
+    expect(container.querySelector("li > .tile")).not.toBeNull();
+    expect(container.querySelector(".tile img")!.getAttribute("src")).toBe(
+      "https://avatars.githubusercontent.com/TISEPSE?s=88",
     );
+    expect(screen.getByText("TISEPSE/MailFlow")).toBeTruthy();
   });
 
   it("ne laisse retirer de la liste qu'un dépôt ajouté à la main", () => {

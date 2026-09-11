@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   ArrowClockwise,
   DownloadSimple,
+  GithubLogo,
   Info,
   ListBullets,
   MinusCircle,
@@ -239,22 +240,33 @@ export function RepoLine({
   const uninstallBlocked = !job && row.installed !== null && !row.removable;
   const hintId = `hint-${row.slug.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
+  // Une carte, comme dans l'onglet npm : une grille montre bien plus de dépôts
+  // qu'une liste de lignes pleine largeur.
   return (
-    <li className="packages__item repo">
-      <Avatar owner={row.owner} />
+    <li>
+      <article className="tile">
+        <header className="tile__header">
+          <Avatar owner={row.owner} large />
+          <div className="tile__identity">
+            <span className="tile__name" title={row.label}>
+              {row.label}
+            </span>
+            <span className="tile__meta">
+              <span className="tile__version">
+                <GithubLogo size={13} aria-hidden="true" />
+                {row.slug}
+              </span>
+            </span>
+          </div>
+        </header>
 
-      <div className="packages__info">
-        <div className="packages__heading">
-          <span className="packages__name">{row.label}</span>
-          <span className="packages__version">{row.slug}</span>
-        </div>
-        {row.description && <p className="packages__summary">{row.description}</p>}
-        <p className="packages__date">{job ? queueVerdict(job.state) : verdict()}</p>
+        {row.description && <p className="tile__description">{row.description}</p>}
+        <p className="tile__status">{job ? queueVerdict(job.state) : verdict()}</p>
 
-        {/* Hors ligne, la ligne reste utile : elle affiche ce qu'elle sait,
+        {/* Hors ligne, la carte reste utile : elle affiche ce qu'elle sait,
             en disant depuis quand elle le sait. */}
         {!job && ready?.stale && (
-          <p className="packages__date">
+          <p className="tile__status">
             <StatusLine tone="offline">
               Hors ligne, dernière vérification {sinceLabel(ready.checkedAt)}
             </StatusLine>
@@ -304,39 +316,41 @@ export function RepoLine({
             {UNREMOVABLE}
           </p>
         )}
-      </div>
 
-      <div className="repo__actions">
-        {action()}
+        <div className="tile__footer tile__actions">
+          {action()}
 
-        {/* Désinstaller retire l'application ; Retirer retire le dépôt de la
-            liste. Deux gestes différents, qui peuvent se côtoyer. */}
-        {!job && row.installed !== null && (
-          <button
-            type="button"
-            className="btn btn-danger"
-            disabled={!row.removable || removing}
-            onClick={onUninstall}
-            aria-describedby={uninstallBlocked ? hintId : undefined}
-          >
-            <Trash size={16} aria-hidden="true" />
-            {removing ? "Suppression…" : "Désinstaller"}
-          </button>
-        )}
+          {/* Désinstaller retire l'application ; Retirer retire le dépôt de la
+              liste. Deux gestes différents, qui peuvent se côtoyer. */}
+          {!job && row.installed !== null && (
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={!row.removable || removing}
+              onClick={onUninstall}
+              aria-describedby={uninstallBlocked ? hintId : undefined}
+            >
+              <Trash size={16} aria-hidden="true" />
+              {removing ? "Suppression…" : "Désinstaller"}
+            </button>
+          )}
 
-        {onForget && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={(job !== undefined && moving(job.state)) || removing}
-            onClick={onForget}
-            title="Retirer ce dépôt de la liste, sans toucher au système"
-          >
-            <MinusCircle size={16} aria-hidden="true" />
-            Retirer
-          </button>
-        )}
-      </div>
+          {/* Plus rare, « Retirer » se réduit à son icône : le lecteur d'écran
+              entend son nom, la souris lit l'infobulle. */}
+          {onForget && (
+            <button
+              type="button"
+              className="btn btn-ghost tile__forget"
+              disabled={(job !== undefined && moving(job.state)) || removing}
+              onClick={onForget}
+              aria-label="Retirer"
+              title="Retirer ce dépôt de la liste, sans toucher au système"
+            >
+              <MinusCircle size={20} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </article>
     </li>
   );
 }

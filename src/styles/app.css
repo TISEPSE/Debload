@@ -1031,7 +1031,7 @@
   height: 44px;
 }
 
-.npm-card .skeleton__line--title {
+.tile .skeleton__line--title {
   width: 70%;
 }
 
@@ -1039,7 +1039,7 @@
   width: 90%;
 }
 
-.npm-card .skeleton__button {
+.tile .skeleton__button {
   margin-top: auto;
 }
 
@@ -1050,6 +1050,46 @@
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton__block { animation: none; }
+}
+
+/* --- Cartes de dépôts ---------------------------------------------------- */
+
+/* Le verdict d'une carte, et ce qui s'y ajoute pendant une installation. */
+.tile__status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-3);
+}
+
+/* Les boutons passent à la ligne quand la carte est étroite. « Retirer »,
+   plus rare, se réduit à son icône et se range à droite. */
+.tile__actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tile__forget {
+  min-width: 44px;
+  min-height: 44px;
+  margin-left: auto;
+  padding-inline: 0;
+  color: var(--color-text-3);
+}
+
+.tile__forget:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.tile .repo__hint,
+.tile .repo__assets {
+  margin: 0;
+}
+
+/* Un nom de fichier long se coupe plutôt que de déborder de la carte. */
+.tile .repo__assets .btn {
+  max-width: 100%;
+  white-space: normal;
+  word-break: break-all;
 }
 
 /* --- Page « npm » ------------------------------------------------------- */
@@ -1079,20 +1119,20 @@
 /* Les paquets en cartes, dans une grille qui se replie seule sur une colonne
    quand la fenêtre rétrécit : des milliers de paquets tiennent mieux en tuiles
    qu'en lignes pleine largeur. */
-.npm-grid {
+.tile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.npm-grid > li {
+.tile-grid > li {
   display: flex;
 }
 
-.npm-card {
+.tile {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -1106,25 +1146,25 @@
   transition: box-shadow 0.15s;
 }
 
-.npm-card:hover {
+.tile:hover {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text) 30%, transparent);
 }
 
-.npm-card__header {
+.tile__header {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
-.npm-card__identity {
+.tile__identity {
   display: flex;
   flex-direction: column;
   gap: 3px;
   min-width: 0;
 }
 
-.npm-card__name {
+.tile__name {
   overflow: hidden;
   font-size: 14.5px;
   font-weight: 500;
@@ -1132,7 +1172,7 @@
   white-space: nowrap;
 }
 
-.npm-card__meta {
+.tile__meta {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 10px;
@@ -1140,20 +1180,20 @@
   color: var(--color-text-3);
 }
 
-.npm-card__command,
-.npm-card__version {
+.tile__command,
+.tile__version {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.npm-card__command {
+.tile__command {
   font-family: var(--font-mono);
 }
 
 /* Trois lignes au plus : la carte garde sa forme, quelle que soit la longueur
    de ce que l'auteur a écrit. */
-.npm-card__description {
+.tile__description {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
@@ -1165,17 +1205,17 @@
 }
 
 /* Le bouton se range en bas de la carte, aligné d'une carte à l'autre. */
-.npm-card__footer {
+.tile__footer {
   display: flex;
   align-items: center;
   margin-top: auto;
 }
 
-.npm-card__footer .progress {
+.tile__footer .progress {
   flex: 1;
 }
 
-.npm-card .details {
+.tile .details {
   margin: 0;
 }
 

@@ -152,6 +152,13 @@ describe("ReposView", () => {
     expect(refreshRepo).toHaveBeenCalledWith("TISEPSE/MailFlow", false);
   });
 
+  it("range les dépôts en cartes, comme l'onglet npm", async () => {
+    const { container } = render(<Harness environment={debian} />);
+    await screen.findByText("MailFlow");
+    expect(container.querySelector(".tile-grid > li > .tile")).not.toBeNull();
+    expect(container.querySelector("ul.packages")).toBeNull();
+  });
+
   it("n'interroge que quatre dépôts à la fois", async () => {
     const many = Array.from({ length: 12 }, (_, n) => ({
       ...row,

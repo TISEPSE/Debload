@@ -5,11 +5,267 @@
 //! appartient à l'utilisateur, et ne passe à npm qu'un nom du registre, validé
 //! avant tout appel.
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::DebloadError;
+use crate::npm_store::{self, NpmRecord};
+use crate::runner::CommandRunner;
+
+/// Un paquet npm global que Debload a installé, tel que npm le voit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NpmPackage {
+    pub name: String,
+    pub installed: String,
+}
+
+/// Ce que l'onglet npm doit savoir avant tout appel au registre.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NpmStatus {
+    /// Faux quand npm ne répond pas.
+    pub available: bool,
+    /// Où arrivent les commandes des paquets installés.
+    pub bin_dir: Option<String>,
+    /// Faux quand ce dossier manque au PATH : les commandes y resteraient
+    /// introuvables, et l'utilisateur doit le savoir.
+    pub bin_on_path: bool,
+    pub packages: Vec<NpmPackage>,
+}
+
+/// Où npm range les modules globaux d'un préfixe.
+fn modules_dir(prefix: &Path) -> PathBuf {
+    if cfg!(windows) {
+        prefix.join("node_modules")
+    } else {
+        prefix.join("lib").join("node_modules")
+    }
+}
+
+/// Où npm pose les commandes des paquets globaux d'un préfixe.
+pub fn bin_dir(prefix: &Path) -> PathBuf {
+    if cfg!(windows) {
+        prefix.to_path_buf()
+    } else {
+        prefix.join("bin")
+    }
+}
+
+pub fn on_path(dir: &Path, path_var: Option<&OsStr>) -> bool {
+    path_var.is_some_and(|var| std::env::split_paths(var).any(|entry| entry == dir))
+}
+
+/// Vrai si Debload peut écrire là où npm poserait les modules.
+///
+/// On essaie pour de bon plutôt que de lire des permissions : un dossier monté
+/// en lecture seule, ou régi par des ACL, ment sur ses bits. Le dossier des
+/// modules peut ne pas exister encore : c'est alors son plus proche parent
+/// existant qui compte, puisque npm le créera là.
+fn writable(prefix: &Path) -> bool {
+    let modules = modules_dir(prefix);
+    let candidates = [modules.as_path(), modules.parent().unwrap_or(prefix), prefix];
+    let Some(existing) = candidates.into_iter().find(|dir| dir.is_dir()) else {
+        return false;
+    };
+
+    let probe = existing.join(".debload-ecriture");
+    if std::fs::write(&probe, b"").is_err() {
+        return false;
+    }
+    let _ = std::fs::remove_file(&probe);
+    true
+}
+
+/// Le préfixe où installer, sans jamais demander root.
+///
+/// Celui de npm s'il appartient à l'utilisateur ; sinon, sous Unix, `~/.local`,
+/// dont `bin` figure au PATH par défaut sur Ubuntu. Sous Windows le préfixe par
+/// défaut est déjà à l'utilisateur : s'il ne l'est pas, on le dit plutôt que
+/// d'inventer un dossier que le PATH ignorerait.
+pub fn resolve_prefix(runner: &dyn CommandRunner, home: &Path) -> Result<PathBuf, DebloadError> {
+    let out = runner
+        .run(npm_program(), &["config", "get", "prefix"])
+        .map_err(|_| DebloadError::NpmMissing)?;
+    if !out.success() {
+        return Err(DebloadError::NpmMissing);
+    }
+
+    let configured = PathBuf::from(out.stdout.trim());
+    if !configured.as_os_str().is_empty() && writable(&configured) {
+        return Ok(configured);
+    }
+
+    if cfg!(windows) {
+        return Err(DebloadError::Io(format!(
+            "le dossier global de npm n'est pas modifiable : {}",
+            configured.display()
+        )));
+    }
+    Ok(home.join(".local"))
+}
+
+/// Les paquets globaux présents sous un préfixe.
+///
+/// `None` quand npm n'a rien dit de lisible : ne pas savoir n'est pas savoir
+/// qu'il n'y a rien, et le statut ne doit rien oublier sur un doute.
+fn installed_under(runner: &dyn CommandRunner, prefix: &Path) -> Option<Vec<(String, String)>> {
+    let args = ls_args(prefix);
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = runner.run(npm_program(), &borrowed).ok()?;
+
+    serde_json::from_str::<serde_json::Value>(&out.stdout).ok()?;
+    Some(parse_ls(&out.stdout))
+}
+
+/// Ce que Debload a installé et que npm voit encore.
+///
+/// Un paquet noté que npm ne voit plus a été retiré à la main : il est oublié,
+/// comme une AppImage effacée.
+pub fn status(
+    runner: &dyn CommandRunner,
+    store_path: &Path,
+    home: &Path,
+    path_var: Option<&OsStr>,
+) -> NpmStatus {
+    let Ok(prefix) = resolve_prefix(runner, home) else {
+        return NpmStatus {
+            available: false,
+            bin_dir: None,
+            bin_on_path: false,
+            packages: Vec::new(),
+        };
+    };
+
+    let mut store = npm_store::load(store_path);
+    let before = store.packages.len();
+
+    // Un seul `npm ls` par préfixe, quel que soit le nombre de paquets.
+    let mut listings: HashMap<String, Option<Vec<(String, String)>>> = HashMap::new();
+    let mut packages = Vec::new();
+
+    store.packages.retain(|record| {
+        let listing = listings
+            .entry(record.prefix.clone())
+            .or_insert_with(|| installed_under(runner, Path::new(&record.prefix)));
+
+        let Some(listing) = listing else {
+            return true;
+        };
+        match listing.iter().find(|(name, _)| name == &record.name) {
+            Some((_, version)) => {
+                packages.push(NpmPackage {
+                    name: record.name.clone(),
+                    installed: version.clone(),
+                });
+                true
+            }
+            None => false,
+        }
+    });
+
+    if store.packages.len() != before {
+        let _ = npm_store::save(store_path, &store);
+    }
+
+    let bin = bin_dir(&prefix);
+    NpmStatus {
+        available: true,
+        bin_on_path: on_path(&bin, path_var),
+        bin_dir: Some(bin.display().to_string()),
+        packages,
+    }
+}
+
+/// Installe un paquet, ou le met à jour, et le note.
+pub fn install(
+    runner: &dyn CommandRunner,
+    store_path: &Path,
+    home: &Path,
+    name: &str,
+    on_line: &dyn Fn(&str, &str),
+) -> Result<NpmPackage, DebloadError> {
+    validate_npm_name(name)?;
+
+    let mut store = npm_store::load(store_path);
+    // Une mise à jour reste là où la première installation a posé le paquet.
+    let prefix = match store.record_for(name) {
+        Some(record) => PathBuf::from(&record.prefix),
+        None => resolve_prefix(runner, home)?,
+    };
+
+    run_npm(runner, &install_args(&prefix, name), on_line)?;
+
+    let installed = installed_under(runner, &prefix)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|(listed, _)| listed == name)
+        .map(|(_, version)| version)
+        .unwrap_or_default();
+
+    store.remember(NpmRecord {
+        name: name.to_string(),
+        prefix: prefix.display().to_string(),
+        installed_at: chrono::Local::now().to_rfc3339(),
+    });
+    npm_store::save(store_path, &store)?;
+
+    Ok(NpmPackage {
+        name: name.to_string(),
+        installed,
+    })
+}
+
+/// Retire un paquet que Debload a installé, du préfixe où il l'a posé.
+pub fn uninstall(
+    runner: &dyn CommandRunner,
+    store_path: &Path,
+    name: &str,
+    on_line: &dyn Fn(&str, &str),
+) -> Result<(), DebloadError> {
+    validate_npm_name(name)?;
+
+    let mut store = npm_store::load(store_path);
+    let record = store
+        .record_for(name)
+        .cloned()
+        .ok_or_else(|| DebloadError::NotManaged(name.to_string()))?;
+
+    run_npm(
+        runner,
+        &uninstall_args(Path::new(&record.prefix), name),
+        on_line,
+    )?;
+
+    store.forget(name);
+    npm_store::save(store_path, &store)
+}
+
+/// Lance npm et traduit son échec : ce qu'il a écrit sur stderr, à défaut
+/// sur stdout, est ce qui explique le mieux ce qui s'est passé.
+fn run_npm(
+    runner: &dyn CommandRunner,
+    args: &[String],
+    on_line: &dyn Fn(&str, &str),
+) -> Result<(), DebloadError> {
+    let borrowed: Vec<&str> = args.iter().map(String::as_str).collect();
+    let out = runner
+        .run_streaming(npm_program(), &borrowed, on_line)
+        .map_err(|_| DebloadError::NpmMissing)?;
+
+    if out.success() {
+        return Ok(());
+    }
+    let detail = if out.stderr.trim().is_empty() {
+        &out.stdout
+    } else {
+        &out.stderr
+    };
+    Err(DebloadError::CommandFailed(detail.trim().to_string()))
+}
 
 /// Vérifie qu'on tient un simple nom du registre, et rien d'autre.
 ///
@@ -154,6 +410,252 @@ pub fn parse_latest(json: &str) -> Result<String, DebloadError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::npm_store::{self, NpmRecord, NpmStore};
+    use crate::runner::{CommandOutput, FakeRunner};
+
+    /// Un registre qui connaît déjà ces paquets, installés sous `prefix`.
+    fn seed(store_path: &Path, names: &[&str], prefix: &str) {
+        let mut store = NpmStore::default();
+        for name in names {
+            store.remember(NpmRecord {
+                name: name.to_string(),
+                prefix: prefix.to_string(),
+                installed_at: String::new(),
+            });
+        }
+        npm_store::save(store_path, &store).unwrap();
+    }
+
+    #[test]
+    fn keeps_npms_own_prefix_when_it_can_write_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeRunner::new();
+        fake.on(
+            &["config", "prefix"],
+            CommandOutput::ok(&format!("{}\n", dir.path().display())),
+        );
+
+        assert_eq!(
+            resolve_prefix(&fake, Path::new("/home/x")).unwrap(),
+            dir.path()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn falls_back_to_local_when_npms_prefix_is_out_of_reach() {
+        let fake = FakeRunner::new();
+        fake.on(
+            &["config", "prefix"],
+            CommandOutput::ok("/chemin/absolument/inexistant\n"),
+        );
+
+        assert_eq!(
+            resolve_prefix(&fake, Path::new("/home/x")).unwrap(),
+            Path::new("/home/x/.local")
+        );
+    }
+
+    #[test]
+    fn a_missing_npm_is_reported_as_such() {
+        let fake = FakeRunner::new();
+        fake.on(&["config", "prefix"], CommandOutput::fail(127, "npm: not found"));
+
+        assert_eq!(
+            resolve_prefix(&fake, Path::new("/h")).unwrap_err(),
+            DebloadError::NpmMissing
+        );
+    }
+
+    #[test]
+    fn tells_whether_a_directory_is_on_the_path() {
+        let var = std::env::join_paths(["/usr/bin", "/home/x/.local/bin"]).unwrap();
+
+        assert!(on_path(Path::new("/home/x/.local/bin"), Some(var.as_os_str())));
+        assert!(!on_path(Path::new("/opt/bin"), Some(var.as_os_str())));
+        assert!(!on_path(Path::new("/opt/bin"), None));
+    }
+
+    #[test]
+    fn installing_records_the_package_and_its_prefix() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+        let prefix = dir.path().display().to_string();
+
+        let fake = FakeRunner::new();
+        fake.on(&["config", "prefix"], CommandOutput::ok(&prefix));
+        fake.on(
+            &["install", "typescript@latest"],
+            CommandOutput::ok("added 1 package\n"),
+        );
+        fake.on(
+            &["ls", "--json"],
+            CommandOutput::ok(r#"{"dependencies":{"typescript":{"version":"7.0.2"}}}"#),
+        );
+
+        let lines = std::sync::Mutex::new(Vec::new());
+        let installed = install(&fake, &store_path, Path::new("/h"), "typescript", &|_, line| {
+            lines.lock().unwrap().push(line.to_string())
+        })
+        .unwrap();
+
+        assert_eq!(installed.installed, "7.0.2");
+        assert_eq!(*lines.lock().unwrap(), vec!["added 1 package"]);
+        assert_eq!(
+            npm_store::load(&store_path)
+                .record_for("typescript")
+                .unwrap()
+                .prefix,
+            prefix
+        );
+        // npm est lancé directement, jamais à travers un shell.
+        assert!(fake.calls().iter().all(|call| call[0] == npm_program()));
+    }
+
+    #[test]
+    fn an_invalid_name_never_reaches_npm() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeRunner::new();
+
+        let err = install(
+            &fake,
+            &dir.path().join("npm.json"),
+            Path::new("/h"),
+            "--prefix=/",
+            &|_, _| {},
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, DebloadError::InvalidNpmName(_)));
+        assert!(fake.calls().is_empty());
+    }
+
+    #[test]
+    fn a_failed_install_records_nothing_and_says_why() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+
+        let fake = FakeRunner::new();
+        fake.on(
+            &["config", "prefix"],
+            CommandOutput::ok(&dir.path().display().to_string()),
+        );
+        fake.on(&["install"], CommandOutput::fail(1, "npm error 404 Not Found\n"));
+
+        let err = install(&fake, &store_path, Path::new("/h"), "introuvable", &|_, _| {})
+            .unwrap_err();
+
+        assert_eq!(
+            err,
+            DebloadError::CommandFailed("npm error 404 Not Found".to_string())
+        );
+        assert!(npm_store::load(&store_path).packages.is_empty());
+    }
+
+    #[test]
+    fn an_update_stays_in_the_prefix_of_the_first_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+        seed(&store_path, &["pnpm"], "/ancien");
+
+        // Aucune règle pour `config` : le préfixe noté suffit, npm n'est pas
+        // interrogé sur le sien.
+        let fake = FakeRunner::new();
+        fake.on(&["install", "/ancien"], CommandOutput::ok(""));
+        fake.on(
+            &["ls"],
+            CommandOutput::ok(r#"{"dependencies":{"pnpm":{"version":"10.0.0"}}}"#),
+        );
+
+        let updated = install(&fake, &store_path, Path::new("/h"), "pnpm", &|_, _| {}).unwrap();
+        assert_eq!(updated.installed, "10.0.0");
+    }
+
+    #[test]
+    fn refuses_to_uninstall_what_debload_did_not_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeRunner::new();
+
+        let err = uninstall(&fake, &dir.path().join("npm.json"), "typescript", &|_, _| {})
+            .unwrap_err();
+
+        assert!(matches!(err, DebloadError::NotManaged(_)));
+        assert!(fake.calls().is_empty());
+    }
+
+    #[test]
+    fn uninstalling_forgets_the_package() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+        seed(&store_path, &["pnpm"], "/p");
+
+        let fake = FakeRunner::new();
+        fake.on(&["uninstall", "pnpm"], CommandOutput::ok("removed 1 package\n"));
+
+        uninstall(&fake, &store_path, "pnpm", &|_, _| {}).unwrap();
+        assert!(npm_store::load(&store_path).packages.is_empty());
+    }
+
+    #[test]
+    fn the_status_drops_a_package_removed_by_hand() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+        let prefix = dir.path().display().to_string();
+        seed(&store_path, &["pnpm", "typescript"], &prefix);
+
+        let fake = FakeRunner::new();
+        fake.on(&["config", "prefix"], CommandOutput::ok(&prefix));
+        fake.on(
+            &["ls"],
+            CommandOutput::ok(r#"{"dependencies":{"typescript":{"version":"7.0.2"}}}"#),
+        );
+
+        let found = status(&fake, &store_path, Path::new("/h"), None);
+
+        assert!(found.available);
+        assert_eq!(
+            found.packages,
+            vec![NpmPackage {
+                name: "typescript".into(),
+                installed: "7.0.2".into()
+            }]
+        );
+        assert!(!found.bin_on_path);
+        // pnpm a été retiré à la main : Debload l'oublie, comme une AppImage effacée.
+        assert!(npm_store::load(&store_path).record_for("pnpm").is_none());
+    }
+
+    #[test]
+    fn the_status_says_when_npm_is_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake = FakeRunner::new();
+        fake.on(&["config"], CommandOutput::fail(127, ""));
+
+        let found = status(&fake, &dir.path().join("npm.json"), Path::new("/h"), None);
+        assert!(!found.available);
+        assert!(found.packages.is_empty());
+    }
+
+    #[test]
+    fn an_unreadable_listing_forgets_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let store_path = dir.path().join("npm.json");
+        let prefix = dir.path().display().to_string();
+        seed(&store_path, &["typescript"], &prefix);
+
+        let fake = FakeRunner::new();
+        fake.on(&["config", "prefix"], CommandOutput::ok(&prefix));
+        fake.on(&["ls"], CommandOutput::fail(1, "npm error ENOENT"));
+
+        let found = status(&fake, &store_path, Path::new("/h"), None);
+
+        // npm n'a rien dit de lisible : ne pas savoir n'est pas savoir qu'il
+        // n'y a rien. Une panne passagère ne doit pas effacer le registre.
+        assert!(found.packages.is_empty());
+        assert!(npm_store::load(&store_path)
+            .record_for("typescript")
+            .is_some());
+    }
 
     #[test]
     fn accepts_the_names_the_registry_publishes() {

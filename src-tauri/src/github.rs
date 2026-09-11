@@ -262,7 +262,8 @@ pub fn cached_gh_token(runner: &dyn CommandRunner) -> Option<String> {
 ///
 /// Le plafond de trente secondes vaut pour l'échange complet : une réponse
 /// d'API tient dans quelques kilo-octets, elle n'a aucune raison de traîner.
-fn agent() -> &'static ureq::Agent {
+/// Le registre npm s'en sert aussi, pour les mêmes raisons.
+pub(crate) fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| {
         ureq::Agent::config_builder()

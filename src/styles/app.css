@@ -1,41 +1,8 @@
-:root {
-  --bg: #16181d;
-  --surface: #1e2128;
-  --surface-raised: #262a33;
-  --border: #333844;
-  --text: #e8eaed;
-  --text-dim: #9aa0aa;
-  --accent: #e95420; /* orange Ubuntu */
-  --accent-hover: #f0663a;
-  --accent-strong: #cc4416;
-  --danger: #c0392b;
-  --danger-strong: #a53226;
-  --success: #2e9e5b;
-  --radius: 10px;
-}
+/* Debload : la mise en page propre à l'application, par-dessus nocturne.css.
+   Couleurs et polices viennent uniquement des tokens du design system ; ce
+   fichier ne décide que de la place des choses. */
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f6f6f7;
-    --surface: #ffffff;
-    --surface-raised: #f0f1f3;
-    --border: #d8dade;
-    --text: #1c1e22;
-    --text-dim: #6b7280;
-  }
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, "Ubuntu", sans-serif;
-  font-size: 15px;
-}
+/* --- Charpente ---------------------------------------------------------- */
 
 .app {
   display: flex;
@@ -44,14 +11,13 @@ body {
 }
 
 .app__header {
-  padding: 20px 28px 0;
-  border-bottom: 1px solid var(--border);
+  padding: 22px 28px 0;
+  border-bottom: 1px solid var(--color-divider);
 }
 
 .app__title {
-  margin: 0 0 16px;
-  font-size: 20px;
-  font-weight: 600;
+  margin: 0 0 14px;
+  font-size: 19px;
   letter-spacing: -0.01em;
 }
 
@@ -61,40 +27,43 @@ body {
 }
 
 .tabs__tab {
-  padding: 10px 16px;
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
   border-bottom: 2px solid transparent;
   background: none;
-  color: var(--text-dim);
+  color: var(--color-text-2);
   font: inherit;
+  font-size: 14.5px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
 
 .tabs__tab:hover {
-  color: var(--text);
+  color: var(--color-text);
 }
 
 .tabs__tab:focus-visible {
-  outline: 2px solid var(--accent);
   outline-offset: -2px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .tabs__tab--active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
+  color: var(--color-text);
+  font-weight: 500;
+  border-bottom-color: var(--color-accent);
 }
 
 /* Un transfert continue dans « Dépôts » alors qu'on regarde ailleurs. */
 .tabs__busy {
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-left: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--accent);
-  vertical-align: middle;
+  background: var(--color-accent);
   animation: tabs-busy 1.4s ease-in-out infinite;
 }
 
@@ -112,13 +81,13 @@ body {
   overflow-y: auto;
   /* Un peu plus d'air en bas : la dernière tuile d'une longue liste ne doit
      pas s'arrêter pile sur le bord de la fenêtre. */
-  padding: 28px 28px 36px;
+  padding: 24px 28px 36px;
 }
 
 .view {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 18px;
   /* « min-height » et non « height » : une hauteur fixe ferait déborder la
      liste hors de la vue, et le padding bas du conteneur défilant ne
      s'applique pas à ce qui déborde. Le minimum suffit à la zone de dépôt,
@@ -126,93 +95,127 @@ body {
   min-height: 100%;
 }
 
-/* Zone de dépôt */
+/* --- Boutons : des cibles de 44 px -------------------------------------- */
+
+.btn {
+  min-height: 44px;
+  padding-inline: 18px;
+  font-size: 14.5px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+/* Le lien d'action reste plus discret, mais jamais sous 40 px. */
+.btn-ghost {
+  min-height: 40px;
+  padding-inline: 6px;
+  font-size: 13px;
+}
+
+/* --- Zone de dépôt ------------------------------------------------------ */
+
 .dropzone {
   flex: 1;
+  min-height: 320px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  border: 2px dashed var(--border);
-  border-radius: var(--radius);
+  gap: 12px;
+  padding: 24px 40px;
+  border: 2px dashed var(--color-divider);
+  border-radius: var(--radius-md);
+  text-align: center;
   transition: border-color 0.15s, background 0.15s;
 }
 
 .dropzone--active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
 }
 
 .dropzone__icon {
-  font-size: 36px;
-  color: var(--text-dim);
+  display: flex;
+  font-size: 40px;
+  color: var(--color-text-3);
+}
+
+.dropzone--active .dropzone__icon {
+  color: var(--color-accent);
 }
 
 .dropzone__title {
   margin: 0;
-  font-size: 17px;
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .dropzone__hint {
   margin: 0 0 8px;
-  color: var(--text-dim);
   font-size: 13px;
+  color: var(--color-text-3);
 }
 
-/* Carte de paquet */
+/* --- Carte d'un paquet lu ----------------------------------------------- */
+
 .card {
-  padding: 22px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 24px;
+  gap: 16px;
 }
 
 .card__header {
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .card__title {
   margin: 0;
-  font-size: 19px;
+  font-size: 23px;
+  letter-spacing: -0.01em;
 }
 
 .card__version {
-  color: var(--text-dim);
   font-size: 14px;
+  color: var(--color-text-3);
 }
 
 .card__summary {
-  margin: 8px 0 16px;
-  color: var(--text-dim);
+  max-width: 70ch;
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-2);
 }
 
 .card__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 24px;
-  margin: 0 0 18px;
+  gap: 28px;
+  margin: 0;
 }
 
 .card__meta dt {
-  color: var(--text-dim);
-  font-size: 12px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--color-text-3);
 }
 
 .card__meta dd {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
+  font-size: 14px;
 }
 
 .card__notice {
-  padding: 10px 12px;
-  margin: 0 0 16px;
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-radius: 6px;
-  font-size: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-surface));
+  font-size: 13.5px;
+  line-height: 1.5;
 }
 
 .card__actions {
@@ -221,112 +224,38 @@ body {
   gap: 10px;
 }
 
-/* Boutons */
-.button {
-  padding: 9px 18px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  font: inherit;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
-}
+/* --- Journal ------------------------------------------------------------ */
 
-.button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.button--primary {
-  background: var(--accent);
-  color: #fff;
-}
-
-.button--primary:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.button--primary:active:not(:disabled) {
-  background: var(--accent-strong);
-}
-
-.button--primary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.button--ghost {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text);
-}
-
-/* Le bouton secondaire se contente de prendre du relief : il ne doit pas
-   rivaliser avec l'action principale posée à côté. */
-.button--ghost:hover:not(:disabled) {
-  background: var(--surface-raised);
-  border-color: var(--text-dim);
-}
-
-.button--ghost:active:not(:disabled) {
-  background: var(--border);
-}
-
-.button--ghost:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.button--danger {
-  background: transparent;
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-/* Le contour se remplit au survol : l'action destructrice s'annonce
-   franchement avant le clic. */
-.button--danger:hover:not(:disabled) {
-  background: var(--danger);
-  color: #fff;
-}
-
-.button--danger:active:not(:disabled) {
-  background: var(--danger-strong);
-  border-color: var(--danger-strong);
-}
-
-.button--danger:focus-visible {
-  outline: 2px solid var(--danger);
-  outline-offset: 2px;
-}
-
-/* Journal */
 .logs {
   max-height: 260px;
   overflow-y: auto;
-  padding: 14px;
   margin: 0;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-family: "Ubuntu Mono", monospace;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-inset);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
   font-size: 13px;
   white-space: pre-wrap;
 }
 
 .logs__line--stderr {
-  color: var(--danger);
+  color: var(--color-danger);
 }
 
-/* Résultats et états */
+/* --- Résultats et états ------------------------------------------------- */
+
 .status,
 .empty {
-  color: var(--text-dim);
+  margin: 0;
+  color: var(--color-text-3);
 }
 
 .result {
-  padding: 18px 20px;
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
 }
 
 .result h2 {
@@ -335,14 +264,32 @@ body {
 }
 
 .result--success {
-  border-color: var(--success);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-success) 55%, transparent);
 }
 
 .result--error {
-  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 55%, transparent);
 }
 
-/* Liste de paquets */
+.result__actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.result__path {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  word-break: break-all;
+}
+
+/* --- Listes de paquets et de dépôts ------------------------------------- */
+
 .packages {
   list-style: none;
   margin: 0;
@@ -355,84 +302,63 @@ body {
 .packages__item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 14px;
   padding: 16px 18px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
+}
+
+.packages__info {
+  flex: 1;
+  min-width: 0;
 }
 
 .packages__name {
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .packages__version {
-  margin-left: 8px;
-  color: var(--text-dim);
-  font-size: 13px;
+  margin-left: 10px;
+  font-size: 12.5px;
+  color: var(--color-text-3);
 }
 
-.packages__summary,
+.packages__summary {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--color-text-2);
+}
+
 .packages__date {
   margin: 4px 0 0;
-  color: var(--text-dim);
   font-size: 13px;
+  color: var(--color-text-3);
 }
 
-/* Boîte de dialogue */
-.dialog__backdrop {
-  position: fixed;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 55%);
-}
+/* --- Dialogue ----------------------------------------------------------- */
 
-.dialog {
-  width: min(440px, 90vw);
-  padding: 24px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.dialog__title {
-  margin: 0 0 8px;
-  font-size: 18px;
-}
-
-.dialog__body {
-  margin: 0 0 16px;
-  color: var(--text-dim);
+.dialog-backdrop {
+  z-index: 10;
 }
 
 .dialog__option {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 20px;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 0;
   font-size: 14px;
+  cursor: pointer;
 }
 
-.dialog__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-}
+/* --- Barre d'avancement ------------------------------------------------- */
 
-.result__actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 4px;
-}
-
-/* Barre de progression */
 .progress {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7px;
 }
 
 .progress__header {
@@ -443,15 +369,14 @@ body {
 }
 
 .progress__label {
-  color: var(--text-dim);
-  font-size: 14px;
   overflow: hidden;
+  font-size: 13.5px;
+  color: var(--color-text-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .progress__percent {
-  color: var(--text);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -459,15 +384,15 @@ body {
 .progress__track {
   height: 8px;
   overflow: hidden;
-  background: var(--surface-raised);
   border-radius: 999px;
+  background: var(--color-surface-2);
 }
 
 .progress__fill {
-  height: 100%;
   width: 0;
-  background: var(--accent);
+  height: 100%;
   border-radius: 999px;
+  background: var(--color-accent);
   transition: width 0.25s ease-out;
 }
 
@@ -480,39 +405,40 @@ body {
 }
 
 @keyframes progress-sweep {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(340%);
-  }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(340%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .progress__track--indeterminate .progress__fill {
-    animation: none;
     width: 100%;
     opacity: 0.4;
+    animation: none;
   }
 }
 
-/* Détails repliés */
+/* --- Détails repliés ---------------------------------------------------- */
+
 .details {
-  margin: 12px 0;
+  margin: 8px 0 0;
 }
 
 .details summary {
-  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  font-size: 13px;
+  color: var(--color-accent);
   cursor: pointer;
-  font-size: 14px;
-  margin-bottom: 8px;
 }
 
 .details summary:hover {
-  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
-/* Page « Dépôts » */
+/* --- Page « Dépôts » ---------------------------------------------------- */
+
 .repo-add {
   display: flex;
   gap: 10px;
@@ -520,22 +446,8 @@ body {
 
 .repo-add__field {
   flex: 1;
-  padding: 9px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  color: var(--text);
-  font: inherit;
-}
-
-.repo-add__field::placeholder {
-  color: var(--text-dim);
-}
-
-.repo-add__field:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-  border-color: var(--accent);
+  min-height: 44px;
+  font-size: 14.5px;
 }
 
 .repo {
@@ -546,40 +458,41 @@ body {
   display: flex;
   flex-shrink: 0;
   gap: 8px;
+  margin-left: auto;
 }
 
 .repo__state--update {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--color-accent);
+  font-weight: 500;
 }
 
 .repo__state--current {
-  color: var(--success);
+  color: var(--color-success);
 }
 
 .repo__state--error {
-  color: var(--danger);
+  color: var(--color-danger);
+  font-weight: 500;
 }
 
 /* Une panne passagère se dit dans un ton neutre : Debload la reprend seul,
    ce n'est pas une erreur à traiter. */
 .repo__state--waiting {
-  color: var(--text-dim);
-  font-style: italic;
+  color: var(--color-text-3);
 }
 
 /* L'avancement et la sortie d'apt vivent sur la ligne du dépôt concerné :
    une installation ne recouvre plus le catalogue, donc rien n'est à refermer
    pour en lancer une autre. */
-.repo .progress,
-.repo .details {
+.repo .progress {
+  max-width: 520px;
   margin-top: 10px;
 }
 
 .repo__stale {
   margin: 4px 0 0;
-  color: var(--text-dim);
   font-size: 13px;
+  color: var(--color-text-3);
 }
 
 .repo__assets {
@@ -591,282 +504,263 @@ body {
   list-style: none;
 }
 
-/* --- Barre d'état du catalogue --------------------------------------- */
+.repo__assets .btn {
+  min-height: 40px;
+  font-size: 13px;
+}
 
 .repo-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
-  padding: 0 2px;
 }
 
 .repo-bar__state {
-  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
+  color: var(--color-text-3);
 }
 
-.repo-bar__action {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  font: inherit;
-  font-size: 13px;
-  text-decoration: underline;
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-.repo-bar__action:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.repo-bar__action:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.repo-bar__action:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.result__path {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--surface-raised);
-  font-family: ui-monospace, "Ubuntu Mono", monospace;
-  font-size: 13px;
-  word-break: break-all;
-}
-
-/* --- Page d'accueil --------------------------------------------------- */
+/* --- Page d'accueil ----------------------------------------------------- */
 
 .intro {
-  max-width: 620px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 700px;
   margin: 0 auto;
-  padding: 48px 28px;
+  padding: 56px 64px 48px;
 }
 
 .intro__header {
-  margin-bottom: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .intro__title {
-  margin: 0 0 10px;
-  font-size: 26px;
-  font-weight: 600;
+  margin: 0;
+  font-size: 30px;
   letter-spacing: -0.02em;
 }
 
 .intro__lead {
   margin: 0;
-  color: var(--text-dim);
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-2);
 }
 
 .intro__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   margin: 0;
   padding: 0;
-  border: none;
+  border: 0;
 }
 
 .intro__legend {
-  padding: 0;
   margin-bottom: 12px;
-  font-weight: 600;
+  padding: 0;
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .intro__actions {
-  margin-top: 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
 .intro__note {
-  margin: 14px 0 0;
-  color: var(--text-dim);
+  margin: 0;
   font-size: 13px;
+  color: var(--color-text-3);
 }
 
-/* --- Choix de système, partagé par l'accueil et les paramètres --------- */
+/* --- Choix de système, partagé par l'accueil et les paramètres ---------- */
 
 .choice {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 14px;
+  min-height: 44px;
   padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: inset 0 0 0 1px var(--color-divider);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: box-shadow 0.15s, background 0.15s;
 }
 
 .choice:hover {
-  border-color: var(--text-dim);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text) 35%, transparent);
 }
 
-.choice--selected {
-  border-color: var(--accent);
-  background: var(--surface-raised);
+.choice--selected,
+.choice--selected:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface));
+  box-shadow: inset 0 0 0 1px var(--color-accent);
 }
 
-/* Même raison que pour la liste : « accent-color » ne suffit pas, WebKitGTK
-   affichait un point plein sur les choix non retenus, qui semblaient donc
+/* WebKitGTK dessine ses propres pastilles tant qu'on ne le lui interdit pas :
+   un point plein apparaissait sur les choix non retenus, qui semblaient donc
    cochés. On dessine la pastille nous-mêmes. */
 .choice__input {
   appearance: none;
   -webkit-appearance: none;
-  position: relative;
   flex-shrink: 0;
-  margin: 3px 0 0;
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--border);
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  border: 1.5px solid var(--color-divider);
   border-radius: 50%;
-  background: var(--surface-raised);
+  background: transparent;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .choice__input:checked {
-  border-color: var(--accent);
-}
-
-.choice__input:checked::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: var(--accent);
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  box-shadow: inset 0 0 0 3px var(--color-surface);
 }
 
 .choice:has(.choice__input:focus-visible) {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
 .choice__body {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .choice__label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 500;
 }
 
 .choice__badge {
-  padding: 1px 7px;
+  padding: 2px 8px;
   border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .choice__examples {
-  color: var(--text-dim);
   font-size: 13px;
+  color: var(--color-text-2);
 }
 
 .choice__effect {
-  color: var(--text-dim);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
+  color: var(--color-text-3);
 }
 
-/* --- Paramètres -------------------------------------------------------- */
+/* --- Paramètres --------------------------------------------------------- */
 
 .settings {
-  max-width: 620px;
+  max-width: 640px;
+  gap: 32px;
 }
 
 .settings__group {
-  margin-bottom: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .settings__title {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 15px;
-  font-weight: 600;
 }
 
 .settings__hint {
-  margin: 0 0 12px;
-  color: var(--text-dim);
+  margin: 0;
   font-size: 13px;
   line-height: 1.5;
+  color: var(--color-text-3);
 }
 
 .settings__notice {
-  margin: 12px 0 0;
+  margin: 0;
   padding: 12px 14px;
-  border-left: 3px solid var(--accent);
-  border-radius: 0 6px 6px 0;
-  background: var(--surface);
-  color: var(--text-dim);
+  border-left: 3px solid var(--color-accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--color-inset);
   font-size: 13px;
   line-height: 1.5;
+  color: var(--color-text-2);
 }
 
 .field {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 10px;
+  min-height: 44px;
 }
 
 .field__label {
-  color: var(--text);
+  font-size: 14.5px;
 }
 
-/* WebKitGTK dessine ses propres widgets tant qu'on ne le lui interdit pas :
-   sous Linux, la liste restait claire et illisible sur fond sombre. On coupe
-   l'apparence native, ce qui emporte aussi la flèche — redessinée en fond. */
+/* WebKitGTK dessine ses propres listes tant qu'on ne le lui interdit pas :
+   sous Linux, elles restaient claires et illisibles sur fond sombre. On coupe
+   l'apparence native, ce qui emporte aussi la flèche : elle est redessinée
+   par un masque, pour prendre la couleur du thème sans deuxième image. */
 .field__control {
   appearance: none;
   -webkit-appearance: none;
-  min-width: 220px;
-  padding: 8px 32px 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background-color: var(--surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%239aa0aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 11px center;
-  color: var(--text);
+  min-width: 240px;
+  min-height: 44px;
+  padding: 6px 36px 6px 12px;
+  border: 1px solid var(--color-divider);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
   font: inherit;
+  font-size: 14.5px;
   cursor: pointer;
 }
 
-@media (prefers-color-scheme: light) {
-  .field__control {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  }
+.field::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 13px;
+  width: 12px;
+  height: 8px;
+  margin-top: -4px;
+  background-color: var(--color-text-3);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+  pointer-events: none;
 }
 
 .field__control:hover:not(:disabled) {
-  border-color: var(--text-dim);
+  border-color: color-mix(in srgb, var(--color-text) 45%, transparent);
 }
 
 .field__control:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  border-color: var(--color-accent);
+  outline-offset: 0;
 }
 
 .field__control:disabled {
-  opacity: 0.6;
+  opacity: 0.45;
   cursor: default;
 }
 
@@ -874,53 +768,60 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  margin-top: 14px;
+  min-height: 44px;
+  padding: 10px 0;
   cursor: pointer;
 }
 
-.toggle__input {
+/* Même raison que pour les pastilles : la case est dessinée à la main, dans
+   les paramètres comme dans le dialogue de désinstallation. */
+.toggle__input,
+.dialog__option input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
   flex-shrink: 0;
-  margin: 3px 0 0;
-  width: 16px;
-  height: 16px;
-  border: 1.5px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface-raised);
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-text) 25%, transparent);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
 }
 
-.toggle__input:checked {
-  border-color: var(--accent);
-  background: var(--accent);
+.toggle__input:checked,
+.dialog__option input[type="checkbox"]:checked {
+  background: var(--color-accent);
+  box-shadow: none;
 }
 
 /* La coche : deux côtés d'un carré, pivotés. */
-.toggle__input:checked::after {
+.toggle__input:checked::after,
+.dialog__option input[type="checkbox"]:checked::after {
   content: "";
   position: absolute;
-  left: 4px;
-  top: 1px;
-  width: 4px;
-  height: 8px;
-  border: solid #fff;
+  top: 2px;
+  left: 6px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--color-bg);
   border-width: 0 2px 2px 0;
   transform: rotate(45deg);
 }
 
 .toggle__input:disabled,
 .choice__input:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
-.toggle:has(.toggle__input:focus-visible) {
-  outline: 2px solid var(--accent);
+.toggle:has(.toggle__input:focus-visible),
+.dialog__option:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .toggle__body {
@@ -929,18 +830,24 @@ body {
   gap: 3px;
 }
 
-.toggle__hint {
-  color: var(--text-dim);
-  font-size: 13px;
-  line-height: 1.45;
+.toggle__label {
+  font-size: 14.5px;
 }
 
-/* Page « npm » : deux listes, qu'un titre discret suffit à séparer. */
-.npm__heading {
-  margin: 8px 0 10px;
-  color: var(--text-dim);
+.toggle__hint {
   font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  line-height: 1.45;
+  color: var(--color-text-3);
+}
+
+/* --- Page « npm » ------------------------------------------------------- */
+
+/* Deux listes, qu'un titre discret suffit à séparer. */
+.npm__heading {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--color-text-3);
 }

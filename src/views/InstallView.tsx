@@ -149,17 +149,17 @@ export function InstallView({ onInstalled }: InstallViewProps) {
           <div className="result__actions">
             {state.launchable ? (
               <>
-                <button type="button" className="button button--primary" onClick={launch}>
+                <button type="button" className="btn btn-primary" onClick={launch}>
                   Ouvrir l'application
                 </button>
-                <button type="button" className="button button--ghost" onClick={reset}>
+                <button type="button" className="btn btn-secondary" onClick={reset}>
                   Installer un autre paquet
                 </button>
               </>
             ) : (
               // Un paquet en ligne de commande n'a rien à ouvrir : inutile
               // d'afficher un bouton qui ne mènerait nulle part.
-              <button type="button" className="button button--primary" onClick={reset}>
+              <button type="button" className="btn btn-primary" onClick={reset}>
                 Installer un autre paquet
               </button>
             )}
@@ -177,7 +177,7 @@ export function InstallView({ onInstalled }: InstallViewProps) {
               <LogPanel logs={state.logs} />
             </details>
           )}
-          <button type="button" className="button button--ghost" onClick={reset}>
+          <button type="button" className="btn btn-secondary" onClick={reset}>
             Recommencer
           </button>
         </section>

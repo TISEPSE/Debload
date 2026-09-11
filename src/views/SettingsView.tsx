@@ -88,7 +88,7 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
               <span className="choice__label">
                 {platform.label}
                 {platform.id === environment.detected && (
-                  <span className="choice__badge">détecté</span>
+                  <span className="tag tag-accent choice__badge">détecté</span>
                 )}
               </span>
               <span className="choice__effect">{platform.effect}</span>
@@ -198,7 +198,7 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
         </p>
         <button
           type="button"
-          className="button button--ghost"
+          className="btn btn-secondary"
           disabled={busy}
           onClick={() => void emptyCaches()}
         >

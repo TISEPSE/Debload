@@ -12,7 +12,7 @@ export function DropZone({ active, onBrowse }: DropZoneProps) {
       </div>
       <p className="dropzone__title">Dépose un paquet .deb ici</p>
       <p className="dropzone__hint">un fichier à la fois</p>
-      <button type="button" className="button button--ghost" onClick={onBrowse}>
+      <button type="button" className="btn btn-secondary" onClick={onBrowse}>
         Parcourir…
       </button>
     </div>

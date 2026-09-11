@@ -53,7 +53,7 @@ export function IntroView({ settings, detected, onConfirm, busy, error }: IntroV
               <span className="choice__label">
                 {platform.label}
                 {platform.id === detected && (
-                  <span className="choice__badge">détecté</span>
+                  <span className="tag tag-accent choice__badge">détecté</span>
                 )}
               </span>
               <span className="choice__examples">{platform.examples}</span>
@@ -68,7 +68,7 @@ export function IntroView({ settings, detected, onConfirm, busy, error }: IntroV
       <div className="intro__actions">
         <button
           type="button"
-          className="button button--primary"
+          className="btn btn-primary"
           disabled={busy}
           onClick={() => onConfirm({ ...settings, platform: choice })}
         >

@@ -93,7 +93,7 @@ export function NpmLine({
           {(installed === null || updateAvailable) && (
             <button
               type="button"
-              className="button button--primary"
+              className="btn btn-primary"
               disabled={disabled}
               onClick={onInstall}
             >
@@ -104,7 +104,7 @@ export function NpmLine({
           {onUninstall && installed !== null && (
             <button
               type="button"
-              className="button button--danger"
+              className="btn btn-danger"
               disabled={disabled}
               onClick={onUninstall}
             >

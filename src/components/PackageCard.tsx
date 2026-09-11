@@ -48,12 +48,12 @@ export function PackageCard({ info, busy, onConfirm, onCancel }: PackageCardProp
       )}
 
       <footer className="card__actions">
-        <button type="button" className="button button--ghost" onClick={onCancel}>
+        <button type="button" className="btn btn-secondary" onClick={onCancel}>
           Annuler
         </button>
         <button
           type="button"
-          className="button button--primary"
+          className="btn btn-primary"
           onClick={onConfirm}
           disabled={busy}
         >

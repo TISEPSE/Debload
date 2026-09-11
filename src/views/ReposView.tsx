@@ -234,7 +234,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
       <form className="repo-add" aria-label="Ajouter un dépôt" onSubmit={submitInstall}>
         <input
           type="text"
-          className="repo-add__field"
+          className="input repo-add__field"
           placeholder="Ajouter un dépôt : owner/repo ou une URL GitHub"
           aria-label="Ajouter un dépôt GitHub"
           value={draft}
@@ -242,13 +242,13 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
         />
         <button
           type="button"
-          className="button button--ghost"
+          className="btn btn-secondary"
           disabled={draft.trim() === ""}
           onClick={() => void submitAdd()}
         >
           Ajouter
         </button>
-        <button type="submit" className="button button--primary" disabled={draft.trim() === ""}>
+        <button type="submit" className="btn btn-primary" disabled={draft.trim() === ""}>
           Installer
         </button>
       </form>
@@ -259,7 +259,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
         </span>
         <button
           type="button"
-          className="repo-bar__action"
+          className="btn btn-ghost"
           disabled={checking}
           onClick={() => void refreshAll(true)}
         >

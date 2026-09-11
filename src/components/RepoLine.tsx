@@ -185,7 +185,7 @@ export function RepoLine({
       return (
         <button
           type="button"
-          className="button button--primary"
+          className="btn btn-primary"
           disabled={!hasAssets}
           onClick={() => (severalAssets ? setChoosing((open) => !open) : onInstall(null))}
         >
@@ -198,7 +198,7 @@ export function RepoLine({
       return (
         <button
           type="button"
-          className="button button--primary"
+          className="btn btn-primary"
           onClick={() => onInstall(job.assetName)}
         >
           Réessayer
@@ -209,7 +209,7 @@ export function RepoLine({
     if (moving(job.state) || job.state.phase === "done") return null;
 
     return (
-      <button type="button" className="button button--ghost" onClick={onCancel}>
+      <button type="button" className="btn btn-secondary" onClick={onCancel}>
         Retirer de la file
       </button>
     );
@@ -252,7 +252,7 @@ export function RepoLine({
               <li key={asset.name}>
                 <button
                   type="button"
-                  className="button button--ghost"
+                  className="btn btn-secondary"
                   onClick={() => {
                     setChoosing(false);
                     onInstall(asset.name);
@@ -274,7 +274,7 @@ export function RepoLine({
         {!job && row.installed !== null && (
           <button
             type="button"
-            className="button button--danger"
+            className="btn btn-danger"
             disabled={!row.removable || removing}
             onClick={onUninstall}
             title={uninstallHint(row)}
@@ -286,7 +286,7 @@ export function RepoLine({
         {onForget && (
           <button
             type="button"
-            className="button button--ghost"
+            className="btn btn-secondary"
             disabled={(job !== undefined && moving(job.state)) || removing}
             onClick={onForget}
             title="Retirer ce dépôt de la liste, sans toucher au système"

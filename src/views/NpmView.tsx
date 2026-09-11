@@ -173,7 +173,7 @@ export function NpmView() {
       <form className="repo-add" role="search" onSubmit={(event) => event.preventDefault()}>
         <input
           type="search"
-          className="repo-add__field"
+          className="input repo-add__field"
           placeholder="Chercher un paquet npm : typescript, pnpm…"
           aria-label="Chercher un paquet npm"
           value={query}

@@ -22,10 +22,10 @@ export function ConfirmDialog({
   const [purge, setPurge] = useState(false);
 
   return (
-    <div className="dialog__backdrop" role="dialog" aria-modal="true">
+    <div className="dialog-backdrop" role="dialog" aria-modal="true">
       <div className="dialog">
-        <h2 className="dialog__title">Supprimer {packageName} ?</h2>
-        <p className="dialog__body">
+        <h2 className="dialog-title">Supprimer {packageName} ?</h2>
+        <p className="dialog-body">
           {purgeable
             ? "Le paquet sera retiré du système. Ubuntu demandera ton mot de passe."
             : "L'application sera retirée du système. Il peut t'être demandé de confirmer."}
@@ -42,13 +42,13 @@ export function ConfirmDialog({
           </label>
         )}
 
-        <div className="dialog__actions">
-          <button type="button" className="button button--ghost" onClick={onCancel}>
+        <div className="dialog-actions">
+          <button type="button" className="btn btn-secondary" onClick={onCancel}>
             Annuler
           </button>
           <button
             type="button"
-            className="button button--danger"
+            className="btn btn-danger"
             onClick={() => onConfirm(purge)}
           >
             Confirmer

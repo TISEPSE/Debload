@@ -475,8 +475,10 @@
   font-size: 14.5px;
 }
 
+/* La tuile et les boutons se centrent sur la hauteur de la ligne, même quand
+   elle s'allonge d'une barre d'avancement ou d'un choix de fichier. */
 .repo {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .repo__actions {

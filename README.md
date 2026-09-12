@@ -21,7 +21,7 @@
   <img src="docs/screenshots/depots.png" alt="Le catalogue de dépôts" width="100%">
 </p>
 
-Thème sombre ou clair, selon ton système :
+Thème sombre ou clair, au choix dans les paramètres :
 
 <p align="center">
   <img src="docs/screenshots/depots.png" alt="Thème sombre" width="49%">
@@ -55,7 +55,8 @@ Prends la dernière version pour ton système sur la [page des releases](https:/
 - Outils npm globaux (`typescript`, `pnpm`…), installés sans root
 - Désinstallation en un clic, seulement de ce que Debload a installé
 - Dépôts privés via ta session `gh`
-- Thème sombre et clair
+- Thème sombre, clair, ou celui du système
+- Les listes npm se chargent au fil du défilement
 
 ## Développement
 

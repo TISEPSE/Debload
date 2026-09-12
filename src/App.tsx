@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { GearSix, GithubLogo, Package, TrayArrowDown, type Icon } from "@phosphor-icons/react";
 
 import { formatError, getEnvironment, saveSettings } from "./lib/api";
-import { platformInfo } from "./lib/platforms";
 import { working } from "./lib/queue";
 import { QueueProvider, useQueueRunner } from "./lib/queueRunner";
+import { applyTheme } from "./lib/theme";
 import type { Environment, Settings } from "./lib/types";
 import { InstallView } from "./views/InstallView";
 import { IntroView } from "./views/IntroView";
@@ -69,6 +69,11 @@ export default function App() {
   // « Dépôts » continue d'avancer quand on va voir ailleurs.
   const queue = useQueueRunner(environment?.canInstall ?? false, handleInstalled);
   const busy = working(queue.jobs);
+
+  // Posé avant que l'écran ne se peigne : un réglage clair ne passe pas par
+  // un éclair sombre. Tant que les réglages ne sont pas lus, le système décide.
+  const theme = environment?.settings.theme ?? "system";
+  useLayoutEffect(() => applyTheme(theme), [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,16 +148,10 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Les onglets tiennent tout le haut : le nom est déjà dans la barre de
+          la fenêtre, et le système se règle dans « Paramètres ». */}
       <header className="app__header">
-        <div className="app__bar">
-          <h1 className="app__title">Debload</h1>
-          {/* Ce que Debload sait faire ici, dit une fois pour toutes les pages. */}
-          <span className="app__system">
-            {platformInfo(environment.settings.platform ?? environment.detected).label}
-            {environment.canInstall ? " · apt disponible" : " · installeur du système"}
-          </span>
-        </div>
-        <nav className="tabs" role="tablist">
+        <nav className="tabs" role="tablist" aria-label="Sections de Debload">
           {visibleTabs.map((info) => (
             <button
               key={info.id}

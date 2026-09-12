@@ -42,8 +42,3 @@ export const PLATFORMS: PlatformInfo[] = [
     effect: "Debload récupère le .dmg ou le .pkg des dépôts suivis.",
   },
 ];
-
-/** Fiche d'un système, ou celle de Debian si l'identifiant est inconnu. */
-export function platformInfo(id: Platform): PlatformInfo {
-  return PLATFORMS.find((p) => p.id === id) ?? PLATFORMS[0];
-}

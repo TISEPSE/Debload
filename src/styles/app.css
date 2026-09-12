@@ -402,6 +402,8 @@
 }
 
 .progress__percent {
+  flex: none;
+  white-space: nowrap;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
@@ -1084,8 +1086,9 @@
 }
 
 /* Les cartes de dépôt, un peu plus larges que celles de npm : leur rangée
-   porte jusqu'à quatre boutons. */
-.tile-grid--repos {
+   porte jusqu'à quatre boutons. Le sélecteur double l'emporte sur `.tile-grid`,
+   déclarée plus bas. */
+.tile-grid.tile-grid--repos {
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
 }
 

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import {
   ArrowClockwise,
-  CaretDown,
   CheckCircle,
   Compass,
   Lightbulb,
@@ -14,6 +13,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LogPanel } from "../components/LogPanel";
 import { NpmCard } from "../components/NpmCard";
 import { NpmLine } from "../components/NpmLine";
+import { ScrollSentinel } from "../components/ScrollSentinel";
 import { SkeletonRows } from "../components/SkeletonRows";
 import {
   formatError,
@@ -50,13 +50,6 @@ interface Failure {
 function appendNew(previous: NpmHit[], page: NpmHit[]): NpmHit[] {
   const seen = new Set(previous.map((hit) => hit.name));
   return [...previous, ...page.filter((hit) => !seen.has(hit.name))];
-}
-
-/** Le libellé de « Afficher plus », avec ce qu'il reste à charger. */
-function moreLabel(remaining: number): string {
-  return `Afficher plus (${remaining.toLocaleString("fr-FR")} ${
-    remaining > 1 ? "restants" : "restant"
-  })`;
 }
 
 /**
@@ -322,7 +315,7 @@ export function NpmView() {
           )}
 
           {/* Ce qu'on a déjà, en premier et toujours : la liste du registre,
-              elle, s'allonge à chaque « Afficher plus ». */}
+              elle, s'allonge au fil du défilement. */}
           <section>
             <h2 className="npm__heading">
               <CheckCircle size={15} aria-hidden="true" />
@@ -440,17 +433,15 @@ export function NpmView() {
               ) : (
                 <>
                   <ul className="tile-grid">{browsed.map(card)}</ul>
-                  {browseNext < browseTotal && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary npm__more"
-                      disabled={browsing}
-                      onClick={() => void browseMore(browseNext)}
-                    >
-                      <CaretDown size={16} aria-hidden="true" />
-                      {browsing ? "Chargement…" : moreLabel(browseTotal - browseNext)}
-                    </button>
-                  )}
+                  {/* La suite arrive d'elle-même en approchant du bas. Après un
+                      échec, elle s'arrête plutôt que de marteler le registre. */}
+                  <ScrollSentinel
+                    hasMore={browseNext < browseTotal && searchError === null}
+                    loading={browsing}
+                    position={browseNext}
+                    label="Lecture du registre npm…"
+                    onReach={() => void browseMore(browseNext)}
+                  />
                 </>
               )}
             </section>
@@ -467,19 +458,15 @@ export function NpmView() {
               ) : (
                 <>
                   <ul className="tile-grid">{hits.map(card)}</ul>
-                  {/* Le registre en a davantage : la suite se charge à la demande,
-                      autant de fois qu'on veut. */}
-                  {searchNext < total && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary npm__more"
-                      disabled={loadingMore}
-                      onClick={() => void loadMore()}
-                    >
-                      <CaretDown size={16} aria-hidden="true" />
-                      {loadingMore ? "Chargement…" : moreLabel(total - searchNext)}
-                    </button>
-                  )}
+                  {/* Le registre en a davantage : la suite se charge en
+                      défilant, autant de fois qu'il le faut. */}
+                  <ScrollSentinel
+                    hasMore={searchNext < total && searchError === null}
+                    loading={loadingMore}
+                    position={searchNext}
+                    label="Chargement de la suite…"
+                    onReach={() => void loadMore()}
+                  />
                 </>
               )}
             </section>

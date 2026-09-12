@@ -41,9 +41,53 @@ const ready: NpmStatus = {
 /** Rejoue une ligne de sortie comme le backend l'émettrait pendant l'opération. */
 let emitLog: (line: LogLine) => void = () => {};
 
+/** Les repères de bas de liste observés, que le test peut faire apparaître. */
+let sentinels: FakeObserver[] = [];
+
+/** jsdom ne mesure rien : cet observateur attend qu'on lui dise d'agir. */
+class FakeObserver {
+  readonly callback: IntersectionObserverCallback;
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+  }
+
+  observe() {
+    sentinels.push(this);
+  }
+
+  disconnect() {
+    sentinels = sentinels.filter((observer) => observer !== this);
+  }
+
+  unobserve() {}
+
+  takeRecords() {
+    return [];
+  }
+}
+vi.stubGlobal("IntersectionObserver", FakeObserver);
+
+/**
+ * Fait défiler jusqu'au bas de la liste : chaque repère observé se déclenche.
+ *
+ * Hors `act`, comme dans un vrai navigateur : React n'affiche pas l'état
+ * « chargement » avant qu'une réponse immédiate ne le referme.
+ */
+async function scrollToBottom() {
+  await waitFor(() => expect(sentinels.length).toBeGreaterThan(0));
+  for (const observer of [...sentinels]) {
+    observer.callback(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      observer as unknown as IntersectionObserver,
+    );
+  }
+}
+
 describe("NpmView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sentinels = [];
     listen.mockImplementation(
       async (event: string, handler: (event: { payload: LogLine }) => void) => {
         if (event === "npm-log") emitLog = (payload) => handler({ payload });
@@ -98,7 +142,7 @@ describe("NpmView", () => {
     await waitFor(() => expect(npmInstall).toHaveBeenCalledWith("pnpm"));
   });
 
-  it("charge la suite des résultats à la demande", async () => {
+  it("charge la suite des résultats en arrivant en bas", async () => {
     npmSearch.mockImplementation(async (_query: string, from: number) =>
       from === 0
         ? { hits: [{ name: "pnpm", version: "10.0.0", description: null }], total: 2 }
@@ -111,17 +155,20 @@ describe("NpmView", () => {
       target: { value: "pnp" },
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: /afficher plus/i }));
+    await screen.findByText("pnpm");
+    // Plus de bouton à viser : la suite part d'elle-même.
+    expect(screen.queryByRole("button", { name: /afficher plus/i })).toBeNull();
+    await scrollToBottom();
 
     // La suite s'ajoute à ce qui est déjà là, sans le remplacer.
     expect(await screen.findByText("pnpx")).toBeTruthy();
     expect(screen.getByText("pnpm")).toBeTruthy();
     expect(npmSearch).toHaveBeenLastCalledWith("pnp", 1);
-    // Tout le total est affiché : plus rien à charger.
-    expect(screen.queryByRole("button", { name: /afficher plus/i })).toBeNull();
+    // Tout le total est affiché : plus rien à guetter.
+    expect(document.querySelector(".scroll-sentinel")).toBeNull();
   });
 
-  it("n'offre pas d'en charger plus quand tout est déjà là", async () => {
+  it("ne guette pas la suite quand tout est déjà là", async () => {
     npmSearch.mockResolvedValue({
       hits: [{ name: "pnpm", version: "10.0.0", description: null }],
       total: 1,
@@ -134,15 +181,64 @@ describe("NpmView", () => {
     });
 
     expect(await screen.findByText("pnpm")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /afficher plus/i })).toBeNull();
+    expect(document.querySelector(".scroll-sentinel")).toBeNull();
+    expect(sentinels).toHaveLength(0);
+  });
+
+  it("montre la suite qui arrive, sans la redemander entre-temps", async () => {
+    npmBrowse.mockImplementation((from: number) =>
+      from === 0
+        ? Promise.resolve({
+            hits: [{ name: "cowsay", version: "14.1.1", description: null, owner: null }],
+            total: 2,
+          })
+        : new Promise(() => {}),
+    );
+
+    render(<NpmView />);
+    await screen.findByText("cowsay");
+    await scrollToBottom();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toMatch(/lecture du registre/i),
+    );
+    // Pendant le chargement, plus rien n'est guetté : pas de seconde demande.
+    expect(sentinels).toHaveLength(0);
+    expect(npmBrowse).toHaveBeenCalledTimes(2);
+  });
+
+  it("arrête de charger la suite après un échec", async () => {
+    npmBrowse.mockImplementation(async (from: number) => {
+      if (from === 0) {
+        return {
+          hits: [{ name: "cowsay", version: "14.1.1", description: null, owner: null }],
+          total: 2,
+        };
+      }
+      throw { code: "npm_registry_failed", detail: "délai dépassé" };
+    });
+
+    render(<NpmView />);
+    await screen.findByText("cowsay");
+    await scrollToBottom();
+
+    expect(await screen.findByText(/délai dépassé/i)).toBeTruthy();
+    // Sinon le repère, toujours visible, relancerait la page en boucle.
+    expect(document.querySelector(".scroll-sentinel")).toBeNull();
+    expect(npmBrowse).toHaveBeenCalledTimes(2);
   });
 
   it("parcourt les outils du registre sans rien taper", async () => {
-    npmBrowse.mockImplementation(async (from: number) =>
-      from === 0
-        ? { hits: [{ name: "cowsay", version: "14.1.1", description: null, owner: "piuccio" }], total: 2 }
-        : { hits: [{ name: "qrcode-terminal", version: "1.2.2", description: null, owner: null }], total: 2 },
-    );
+    const pages = [
+      { name: "cowsay", version: "14.1.1", description: null, owner: "piuccio" },
+      { name: "qrcode-terminal", version: "1.2.2", description: null, owner: null },
+      { name: "gitmoji-cli", version: "9.7.0", description: null, owner: null },
+    ];
+    // Réponse immédiate : l'état « chargement » peut ne jamais s'afficher.
+    npmBrowse.mockImplementation(async (from: number) => ({
+      hits: [pages[from]],
+      total: pages.length,
+    }));
 
     const { container } = render(<NpmView />);
 
@@ -152,9 +248,14 @@ describe("NpmView", () => {
     // En grille de cartes, pas en lignes pleine largeur : il y en a des milliers.
     expect(container.querySelector('.tile-grid img[src*="/piuccio?"]')).not.toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /afficher plus/i }));
+    await scrollToBottom();
     expect(await screen.findByText("qrcode-terminal")).toBeTruthy();
     expect(npmBrowse).toHaveBeenLastCalledWith(1);
+
+    // Chaque page arrivée relance la mesure : la suivante vient d'elle-même.
+    await scrollToBottom();
+    expect(await screen.findByText("gitmoji-cli")).toBeTruthy();
+    expect(npmBrowse).toHaveBeenLastCalledWith(2);
   });
 
   it("ne désinstalle qu'après confirmation", async () => {

@@ -1,0 +1,32 @@
+name: Signaler un bug
+description: Quelque chose ne marche pas comme prévu
+labels: [bug]
+body:
+  - type: textarea
+    id: probleme
+    attributes:
+      label: Que se passe-t-il ?
+      description: Ce que tu as fait, ce que tu attendais, et ce qui s'est passé à la place.
+    validations:
+      required: true
+  - type: dropdown
+    id: systeme
+    attributes:
+      label: Système
+      options:
+        - Debian, Ubuntu ou dérivée
+        - Autre distribution Linux
+        - Windows
+        - macOS
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version de Debload
+      placeholder: "0.5.3"
+  - type: textarea
+    id: details
+    attributes:
+      label: Captures ou messages d'erreur
+      description: Facultatif.

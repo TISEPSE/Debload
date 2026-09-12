@@ -3,6 +3,7 @@ name = "debload"
 version = "0.5.3"
 description = "Installe et désinstalle des paquets .deb"
 authors = ["Baptiste"]
+license = "MIT"
 edition = "2021"
 
 [lib]

@@ -1,0 +1,11 @@
+name: Proposer une idée
+description: Une fonctionnalité ou une application à ajouter au catalogue
+labels: [idée]
+body:
+  - type: textarea
+    id: idee
+    attributes:
+      label: Ton idée
+      description: Ce que tu aimerais, et pourquoi ce serait utile.
+    validations:
+      required: true

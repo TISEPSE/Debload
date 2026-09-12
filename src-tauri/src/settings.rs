@@ -83,6 +83,17 @@ pub fn detect_platform() -> Platform {
     }
 }
 
+/// Apparence de l'interface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Theme {
+    /// Suit le réglage du système, y compris quand il change en cours de route.
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
@@ -99,6 +110,8 @@ pub struct Settings {
     /// Se servir du jeton de la CLI `gh` quand elle est connectée : il relève
     /// la limite d'appels et ouvre les dépôts privés.
     pub use_gh_token: bool,
+    /// Clair, sombre, ou celui du système.
+    pub theme: Theme,
 }
 
 impl Default for Settings {
@@ -109,6 +122,7 @@ impl Default for Settings {
             auto_refresh_minutes: 30,
             cache_minutes: 60,
             use_gh_token: true,
+            theme: Theme::System,
         }
     }
 }
@@ -245,5 +259,23 @@ mod tests {
         let loaded = load(&path);
         assert_eq!(loaded.platform, Some(Platform::Debian));
         assert_eq!(loaded.cache_minutes, Settings::default().cache_minutes);
+        // Un fichier d'avant le choix du thème suit le système, comme avant.
+        assert_eq!(loaded.theme, Theme::System);
+    }
+
+    #[test]
+    fn the_chosen_theme_survives_a_reload() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+
+        let settings = Settings {
+            theme: Theme::Light,
+            ..Default::default()
+        };
+        save(&path, &settings).unwrap();
+
+        assert_eq!(load(&path).theme, Theme::Light);
+        // L'interface attend les mêmes mots que ceux qu'elle envoie.
+        assert_eq!(serde_json::to_string(&Theme::Dark).unwrap(), r#""dark""#);
     }
 }

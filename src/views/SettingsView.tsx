@@ -3,7 +3,7 @@ import { Broom, Check } from "@phosphor-icons/react";
 
 import { clearCaches, formatError } from "../lib/api";
 import { PLATFORMS } from "../lib/platforms";
-import type { Environment, Platform, Settings } from "../lib/types";
+import type { Environment, Platform, Settings, Theme } from "../lib/types";
 
 interface SettingsViewProps {
   environment: Environment;
@@ -24,6 +24,13 @@ const CACHE_DURATIONS: Array<{ minutes: number; label: string }> = [
   { minutes: 15, label: "15 minutes" },
   { minutes: 60, label: "1 heure" },
   { minutes: 1440, label: "1 jour" },
+];
+
+/** Thèmes proposés, celui du système d'abord : c'est le choix par défaut. */
+const THEMES: Array<{ id: Theme; label: string }> = [
+  { id: "system", label: "Selon le système" },
+  { id: "light", label: "Clair" },
+  { id: "dark", label: "Sombre" },
 ];
 
 export function SettingsView({ environment, onSave }: SettingsViewProps) {
@@ -107,6 +114,26 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
               : " Rien ne tient ici la liste de ce qui est installé : Debload ne peut donc pas désinstaller."}
           </p>
         )}
+      </section>
+
+      <section className="settings__group">
+        <h2 className="settings__title">Apparence</h2>
+
+        <label className="field">
+          <span className="field__label">Thème</span>
+          <select
+            className="field__control"
+            value={settings.theme}
+            disabled={busy}
+            onChange={(event) => void update({ theme: event.target.value as Theme })}
+          >
+            {THEMES.map((theme) => (
+              <option key={theme.id} value={theme.id}>
+                {theme.label}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="settings__group">
@@ -207,11 +234,6 @@ export function SettingsView({ environment, onSave }: SettingsViewProps) {
           {cleared ? "Caches vidés" : "Vider les caches"}
         </button>
       </section>
-
-      <p className="settings__notice">
-        Aucun privilège n'est conservé : pas de règle polkit, pas de session sudo maintenue,
-        aucun mot de passe ne traverse le code de l'application.
-      </p>
     </div>
   );
 }

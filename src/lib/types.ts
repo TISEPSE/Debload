@@ -124,6 +124,9 @@ export interface NpmHit {
 /** Famille de système, telle que l'utilisateur l'a confirmée à l'accueil. */
 export type Platform = "debian" | "linux-other" | "windows" | "mac-os";
 
+/** Apparence de l'interface : « system » suit le réglage du système. */
+export type Theme = "system" | "light" | "dark";
+
 export interface Settings {
   /** `null` tant que la page d'accueil n'a pas été validée. */
   platform: Platform | null;
@@ -133,6 +136,7 @@ export interface Settings {
   /** Durée pendant laquelle une release connue est réutilisée sans appel. */
   cacheMinutes: number;
   useGhToken: boolean;
+  theme: Theme;
 }
 
 /** Ce que le backend sait du système au démarrage. */

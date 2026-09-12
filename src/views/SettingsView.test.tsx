@@ -18,6 +18,7 @@ const environment: Environment = {
     autoRefreshMinutes: 30,
     cacheMinutes: 60,
     useGhToken: true,
+    theme: "system",
   },
   detected: "debian",
   canInstall: true,
@@ -61,6 +62,20 @@ describe("SettingsView", () => {
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({ ...environment.settings, autoRefreshMinutes: 0 }),
+    );
+  });
+
+  it("enregistre le thème choisi", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    render(<SettingsView environment={environment} onSave={onSave} />);
+
+    const theme = screen.getByLabelText(/thème/i) as HTMLSelectElement;
+    expect(theme.value).toBe("system");
+
+    fireEvent.change(theme, { target: { value: "light" } });
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({ ...environment.settings, theme: "light" }),
     );
   });
 

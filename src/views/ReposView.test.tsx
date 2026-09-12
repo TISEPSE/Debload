@@ -80,6 +80,7 @@ const debian: Environment = {
     autoRefreshMinutes: 0,
     cacheMinutes: 60,
     useGhToken: true,
+    theme: "system",
   },
   detected: "debian",
   canInstall: true,

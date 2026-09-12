@@ -10,6 +10,7 @@ const settings: Settings = {
   autoRefreshMinutes: 30,
   cacheMinutes: 60,
   useGhToken: true,
+  theme: "system",
 };
 
 describe("IntroView", () => {

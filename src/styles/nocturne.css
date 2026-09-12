@@ -325,21 +325,25 @@ textarea.input { min-height: 90px; resize: vertical; }
 .btn-danger:hover { background: color-mix(in srgb, var(--color-danger) 12%, transparent); border-color: var(--color-danger); }
 .btn-danger:active { background: color-mix(in srgb, var(--color-danger) 22%, transparent); }
 
+/* Les contrôles natifs (listes déroulantes, barres de défilement) suivent le
+   thème de l'interface plutôt que celui du système. */
+:root { color-scheme: dark; }
+
 /* Thème clair, écran 07 des maquettes : mêmes rampes, rôles inversés. Le pas
-   700 de l'accent tient le contraste à 4,5:1 sur les fonds 100 et 200. */
-@media (prefers-color-scheme: light) {
-  :root {
-    --color-bg: var(--color-neutral-200);
-    --color-surface: var(--color-neutral-100);
-    --color-text: var(--color-neutral-900);
-    --color-accent: var(--color-accent-700);
-    --color-divider: color-mix(in srgb, var(--color-neutral-900) 14%, transparent);
-    --color-danger: #a33d31;
-    --color-success: #276b4c;
-    --color-text-3: var(--color-neutral-700);
-    --color-surface-2: var(--color-accent-200);
-    --shadow-sm: 0 0 0 1px var(--color-neutral-300);
-    --shadow-md: 0 0 0 1px var(--color-neutral-400), 0 6px 18px rgba(0,0,0,0.12);
-    --shadow-lg: 0 0 0 1px var(--color-neutral-400), 0 16px 40px rgba(0,0,0,0.18);
-  }
+   700 de l'accent tient le contraste à 4,5:1 sur les fonds 100 et 200.
+   `data-theme` est posé par l'interface, qui résout elle-même « Système ». */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: var(--color-neutral-200);
+  --color-surface: var(--color-neutral-100);
+  --color-text: var(--color-neutral-900);
+  --color-accent: var(--color-accent-700);
+  --color-divider: color-mix(in srgb, var(--color-neutral-900) 14%, transparent);
+  --color-danger: #a33d31;
+  --color-success: #276b4c;
+  --color-text-3: var(--color-neutral-700);
+  --color-surface-2: var(--color-accent-200);
+  --shadow-sm: 0 0 0 1px var(--color-neutral-300);
+  --shadow-md: 0 0 0 1px var(--color-neutral-400), 0 6px 18px rgba(0,0,0,0.12);
+  --shadow-lg: 0 0 0 1px var(--color-neutral-400), 0 16px 40px rgba(0,0,0,0.18);
 }

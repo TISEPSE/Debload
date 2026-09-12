@@ -1,6 +1,6 @@
 [package]
 name = "debload"
-version = "0.5.3"
+version = "0.6.0"
 description = "Installe et désinstalle des paquets .deb"
 authors = ["Baptiste"]
 license = "MIT"

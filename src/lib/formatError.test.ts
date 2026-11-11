@@ -31,6 +31,17 @@ describe("formatError", () => {
     expect(formatError({ code: "io", detail: "" })).toBe("Le transfert s'est interrompu.");
   });
 
+  it("chiffre ce qui manque à un téléchargement coupé", () => {
+    // 15,8 Mo annoncés, 12,8 reçus : c'est la coupure à 60 secondes qui
+    // frappait MailFlow. Dire « erreur système » n'aidait personne.
+    const message = formatError({
+      code: "truncated",
+      detail: { expected: 15_814_190, received: 12_776_214 },
+    });
+    expect(message).toMatch(/12 Mo reçus sur 15 Mo/);
+    expect(message).toMatch(/réessaie/);
+  });
+
   it("reste lisible face à une erreur inconnue", () => {
     expect(formatError(new Error("boum"))).toMatch(/inattendue/);
   });

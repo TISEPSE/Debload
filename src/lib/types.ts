@@ -31,10 +31,16 @@ export interface LogLine {
   line: string;
 }
 
+/** Ce que dit un transfert incomplet : les octets attendus, ceux reçus. */
+export interface TruncatedDetail {
+  expected: number;
+  received: number;
+}
+
 /** Forme sérialisée de DebloadError côté Rust. */
 export interface DebloadError {
   code: string;
-  detail?: string;
+  detail?: string | TruncatedDetail;
 }
 
 export interface RepoAsset {

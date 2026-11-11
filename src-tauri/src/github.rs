@@ -284,17 +284,24 @@ pub(crate) fn agent() -> &'static ureq::Agent {
 /// qu'il le faut.
 fn download_agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| {
-        ureq::Agent::config_builder()
-            .timeout_global(None)
-            .timeout_per_call(None)
-            .timeout_recv_body(None)
-            .timeout_connect(Some(Duration::from_secs(20)))
-            .timeout_recv_response(Some(Duration::from_secs(60)))
-            .user_agent("Debload")
-            .build()
-            .into()
-    })
+    AGENT.get_or_init(|| build_download_agent(Duration::from_secs(60)))
+}
+
+/// La configuration de l'agent de téléchargement, plafond des en-têtes à part.
+///
+/// Le plafond se passe en argument pour une seule raison : un test ne peut pas
+/// attendre soixante secondes pour vérifier qu'un transfert lent survit. Avec
+/// une demi-seconde, il le vérifie tout de suite.
+fn build_download_agent(recv_response: Duration) -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(None)
+        .timeout_per_call(None)
+        .timeout_recv_body(None)
+        .timeout_connect(Some(Duration::from_secs(20)))
+        .timeout_recv_response(Some(recv_response))
+        .user_agent("Debload")
+        .build()
+        .into()
 }
 
 /// Vrai pour une panne passagère, qu'il vaut la peine de retenter.
@@ -496,12 +503,33 @@ pub fn download(
         return Err(DebloadError::UntrustedUrl(asset.url.clone()));
     }
 
+    fetch_to_file(
+        download_agent(),
+        &asset.url,
+        asset.size,
+        destination,
+        token,
+        on_progress,
+    )
+}
+
+/// Le transfert lui-même, une fois l'adresse jugée digne de confiance.
+///
+/// Séparé de `download` pour deux raisons : le contrôle d'hôte n'a rien à voir
+/// avec l'écriture d'un fichier, et un test a besoin de viser un serveur local
+/// — que `is_allowed_download_url` refuserait, à juste titre.
+fn fetch_to_file(
+    agent: &ureq::Agent,
+    url: &str,
+    announced_size: u64,
+    destination: &Path,
+    token: Option<&str>,
+    on_progress: &dyn Fn(f32, u64, u64),
+) -> Result<(), DebloadError> {
     // Seule l'ouverture se retente : une fois les octets en train d'arriver,
     // rejouer la requête écraserait ce qui a déjà été écrit.
     let send = || {
-        let mut request = download_agent()
-            .get(&asset.url)
-            .header("Accept", "application/octet-stream");
+        let mut request = agent.get(url).header("Accept", "application/octet-stream");
         if let Some(token) = token {
             request = request.header("Authorization", &format!("Bearer {token}"));
         }
@@ -516,14 +544,51 @@ pub fn download(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|n| *n > 0)
-        .unwrap_or(asset.size);
+        .unwrap_or(announced_size);
 
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent).map_err(|e| DebloadError::Io(e.to_string()))?;
     }
 
-    let mut file =
-        std::fs::File::create(destination).map_err(|e| DebloadError::Io(e.to_string()))?;
+    // Les octets arrivent dans un fichier à part, renommé seulement une fois
+    // le compte bon. Un transfert coupé laissait jusqu'ici un paquet tronqué
+    // sous le nom du vrai : trois mégaoctets qui ressemblaient à une release,
+    // que plus rien ne distinguait d'un fichier complet.
+    let partial = partial_path(destination);
+
+    let outcome = write_body(&mut response, &partial, total, on_progress).and_then(|written| {
+        // Un serveur peut fermer proprement en milieu de course : la lecture
+        // rend alors zéro sans erreur, et le fichier paraît fini. Seul le
+        // compte le dit. Sans taille annoncée, il n'y a rien à comparer.
+        if total > 0 && written != total {
+            return Err(DebloadError::Truncated {
+                expected: total,
+                received: written,
+            });
+        }
+        std::fs::rename(&partial, destination).map_err(|e| DebloadError::Io(e.to_string()))
+    });
+
+    // Un seul endroit pour le ménage : quelle que soit la façon dont le
+    // transfert a échoué, il ne doit rien rester sur le disque.
+    if outcome.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+
+    outcome
+}
+
+/// Écrit le corps de la réponse dans un fichier, et rend le compte des octets.
+///
+/// Le nettoyage en cas d'échec reste à l'appelant : cette fonction ne connaît
+/// qu'un chemin où écrire.
+fn write_body(
+    response: &mut ureq::http::Response<ureq::Body>,
+    path: &Path,
+    total: u64,
+    on_progress: &dyn Fn(f32, u64, u64),
+) -> Result<u64, DebloadError> {
+    let mut file = std::fs::File::create(path).map_err(|e| DebloadError::Io(e.to_string()))?;
     let mut reader = response.body_mut().as_reader();
     let mut buffer = vec![0_u8; 64 * 1024];
     let mut written: u64 = 0;
@@ -559,7 +624,18 @@ pub fn download(
     }
 
     file.flush().map_err(|e| DebloadError::Io(e.to_string()))?;
-    Ok(())
+
+    Ok(written)
+}
+
+/// Le nom du fichier en cours de réception.
+///
+/// Un suffixe, pas un autre dossier : le renommage doit rester sur le même
+/// système de fichiers pour être instantané et atomique.
+fn partial_path(destination: &Path) -> std::path::PathBuf {
+    let mut name = destination.as_os_str().to_os_string();
+    name.push(".part");
+    std::path::PathBuf::from(name)
 }
 
 /// Ce que dit la barre pendant un téléchargement.
@@ -990,11 +1066,238 @@ mod tests {
         assert_eq!(gh_token(&fake), None);
     }
 
+    /// Un serveur qui envoie ses en-têtes tout de suite, puis son corps
+    /// lentement.
+    ///
+    /// `header_to_body` est la pause entre les deux, `chunk_pause` celle entre
+    /// chaque morceau du corps : de quoi rejouer une ligne lente en quelques
+    /// centaines de millisecondes au lieu d'une minute. `truncate_at` coupe la
+    /// connexion après ce nombre d'octets, en annonçant la taille complète.
+    fn slow_server(
+        body: Vec<u8>,
+        header_to_body: Duration,
+        chunk_pause: Duration,
+        truncate_at: Option<usize>,
+        announce_length: bool,
+    ) -> (String, std::thread::JoinHandle<()>) {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("écoute locale");
+        let port = listener.local_addr().expect("adresse").port();
+
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("connexion");
+
+            // On lit la requête jusqu'à sa ligne vide, sinon la réponse part
+            // avant que le client ait fini d'écrire.
+            let mut seen = Vec::new();
+            let mut byte = [0_u8; 1];
+            while stream.read(&mut byte).unwrap_or(0) == 1 {
+                seen.push(byte[0]);
+                if seen.ends_with(b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            // Sans `Content-Length`, la fin du corps est la fermeture de la
+            // connexion : c'est le cas où un transfert écourté ne ressemble à
+            // rien d'anormal, du point de vue du protocole.
+            let headers = if announce_length {
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\n\r\n",
+                    body.len()
+                )
+            } else {
+                "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/octet-stream\r\n\r\n"
+                    .to_string()
+            };
+            if stream.write_all(headers.as_bytes()).is_err() {
+                return;
+            }
+            let _ = stream.flush();
+
+            std::thread::sleep(header_to_body);
+
+            let stop = truncate_at.unwrap_or(body.len());
+            let chunk = 1024;
+            let mut sent = 0;
+            while sent < stop {
+                let end = (sent + chunk).min(stop);
+                if stream.write_all(&body[sent..end]).is_err() {
+                    return;
+                }
+                let _ = stream.flush();
+                sent = end;
+                if sent < stop {
+                    std::thread::sleep(chunk_pause);
+                }
+            }
+            // Fermeture franche : c'est ce que fait un serveur qui lâche en
+            // cours de route, et le client ne doit pas la prendre pour une fin.
+            drop(stream);
+        });
+
+        (format!("http://127.0.0.1:{port}/paquet.deb"), handle)
+    }
+
+    /// Un transfert lent va jusqu'au bout, quoi qu'en dise le plafond des
+    /// en-têtes.
+    ///
+    /// La panne : `timeout_recv_response` est documenté comme ne couvrant que
+    /// les en-têtes, mais ureq 3.4.0 faisait courir ce budget *à partir* de
+    /// leur arrivée — donc pendant tout le corps. MailFlow, 15,8 Mo à
+    /// 246 ko/s, demandait 64 secondes et se faisait couper à 60 pile. Le test
+    /// qui gardait cette porte vérifiait la configuration de l'agent, pas ce
+    /// qu'il faisait : il passait au vert pendant que les téléchargements
+    /// mouraient. Celui-ci lit les octets.
+    #[test]
+    fn a_slow_body_outlives_the_header_deadline() {
+        let body = vec![7_u8; 8 * 1024];
+        let (url, server) = slow_server(
+            body.clone(),
+            Duration::from_millis(300),
+            Duration::from_millis(40),
+            None,
+            true,
+        );
+
+        let agent = build_download_agent(Duration::from_millis(200));
+        let dir = std::env::temp_dir().join(format!("debload-lent-{}", std::process::id()));
+        let destination = dir.join("paquet.deb");
+
+        let outcome = fetch_to_file(
+            &agent,
+            &url,
+            body.len() as u64,
+            &destination,
+            None,
+            &|_, _, _| {},
+        );
+        server.join().expect("serveur");
+
+        assert!(
+            outcome.is_ok(),
+            "un corps lent ne doit pas être coupé : {outcome:?}"
+        );
+        assert_eq!(
+            std::fs::read(&destination).expect("fichier").len(),
+            body.len(),
+            "le paquet doit être complet"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Une fin prématurée qui ne ressemble à rien d'anormal est quand même
+    /// refusée.
+    ///
+    /// Le serveur n'annonce pas de taille : la fin du corps, c'est la
+    /// fermeture de la connexion. La lecture rend alors zéro sans erreur, et
+    /// Debload renvoyait `Ok` sur un paquet incomplet — le cache gardait trois
+    /// mégaoctets sous le nom d'une release entière. Seule la taille annoncée
+    /// par la release permet de trancher.
+    #[test]
+    fn a_short_body_is_refused_even_when_the_protocol_is_content() {
+        let body = vec![3_u8; 8 * 1024];
+        let (url, server) = slow_server(
+            body.clone(),
+            Duration::from_millis(0),
+            Duration::from_millis(0),
+            Some(body.len() / 2),
+            false,
+        );
+
+        let agent = build_download_agent(Duration::from_secs(5));
+        let dir = std::env::temp_dir().join(format!("debload-court-{}", std::process::id()));
+        let destination = dir.join("paquet.deb");
+
+        let outcome = fetch_to_file(
+            &agent,
+            &url,
+            body.len() as u64,
+            &destination,
+            None,
+            &|_, _, _| {},
+        );
+        server.join().expect("serveur");
+
+        match outcome {
+            Err(DebloadError::Truncated { expected, received }) => {
+                assert_eq!(expected, body.len() as u64);
+                assert_eq!(received, (body.len() / 2) as u64);
+            }
+            other => panic!("un corps écourté doit être refusé, obtenu : {other:?}"),
+        }
+
+        assert!(
+            !destination.exists(),
+            "aucun paquet tronqué ne doit rester sous le nom du vrai"
+        );
+        assert!(
+            !partial_path(&destination).exists(),
+            "le fichier de réception doit être effacé"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Une connexion coupée en pleine descente ne laisse rien derrière elle.
+    ///
+    /// Ici le serveur avait annoncé sa taille, et ureq voit bien la
+    /// déconnexion : l'erreur n'a jamais manqué. Ce qui manquait, c'est le
+    /// ménage — le fichier à moitié écrit restait sous le nom du paquet
+    /// complet, prêt à être pris pour lui.
+    #[test]
+    fn a_broken_transfer_leaves_no_file_behind() {
+        let body = vec![5_u8; 8 * 1024];
+        let (url, server) = slow_server(
+            body.clone(),
+            Duration::from_millis(0),
+            Duration::from_millis(0),
+            Some(body.len() / 2),
+            true,
+        );
+
+        let agent = build_download_agent(Duration::from_secs(5));
+        let dir = std::env::temp_dir().join(format!("debload-rompu-{}", std::process::id()));
+        let destination = dir.join("paquet.deb");
+
+        let outcome = fetch_to_file(
+            &agent,
+            &url,
+            body.len() as u64,
+            &destination,
+            None,
+            &|_, _, _| {},
+        );
+        server.join().expect("serveur");
+
+        assert!(
+            outcome.is_err(),
+            "une connexion coupée doit remonter une erreur"
+        );
+        assert!(
+            !destination.exists(),
+            "aucun paquet tronqué ne doit rester sous le nom du vrai"
+        );
+        assert!(
+            !partial_path(&destination).exists(),
+            "le fichier de réception doit être effacé"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Un téléchargement dure ce qu'il dure.
     ///
     /// Un plafond global sur l'agent de téléchargement coupait les gros
     /// paquets en pleine descente : c'est la panne que ce test interdit de
     /// réintroduire.
+    ///
+    /// Il ne garde qu'une intention, et ne suffit pas : il a laissé passer la
+    /// coupure à soixante secondes, parce qu'un réglage bien écrit peut se
+    /// comporter autrement qu'annoncé. Ce que fait vraiment l'agent se vérifie
+    /// dans `a_slow_body_outlives_the_header_deadline`.
     #[test]
     fn a_download_is_never_cut_short_by_a_deadline() {
         let timeouts = download_agent().config().timeouts();

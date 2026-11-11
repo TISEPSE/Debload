@@ -141,7 +141,9 @@ export function formatError(error: unknown): string {
     case "protected_package":
       return `${err.detail} est un paquet système essentiel : Debload refuse de le supprimer.`;
     case "command_failed":
-      return err.detail && err.detail.length > 0 ? err.detail : "L'opération a échoué.";
+      return typeof err.detail === "string" && err.detail.length > 0
+        ? err.detail
+        : "L'opération a échoué.";
     case "npm_missing":
       return "npm introuvable. Installe Node.js pour utiliser cet onglet.";
     case "invalid_npm_name":
@@ -152,9 +154,26 @@ export function formatError(error: unknown): string {
       return err.detail
         ? `Le transfert s'est interrompu : ${err.detail}`
         : "Le transfert s'est interrompu.";
+    case "truncated":
+      return `Le téléchargement s'est arrêté avant la fin : ${formatTruncated(
+        err.detail,
+      )}. Le fichier incomplet a été jeté, réessaie.`;
     default:
       return "Une erreur inattendue s'est produite.";
   }
+}
+
+/**
+ * Ce qui manquait, en mégaoctets.
+ *
+ * Le détail arrive en octets : les afficher tels quels ne dit rien à personne.
+ */
+function formatTruncated(detail: DebloadError["detail"]): string {
+  if (!detail || typeof detail === "string") {
+    return "fichier incomplet";
+  }
+  const mo = (bytes: number) => `${Math.max(1, Math.round(bytes / (1024 * 1024)))} Mo`;
+  return `${mo(detail.received)} reçus sur ${mo(detail.expected)}`;
 }
 
 /**

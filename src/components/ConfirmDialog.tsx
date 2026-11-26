@@ -15,7 +15,7 @@ interface ConfirmDialogProps {
 }
 
 /**
- * La confirmation d'une désinstallation, seul endroit modal de l'application.
+ * La confirmation d'une désinstallation.
  *
  * « Annuler » reçoit le focus à l'ouverture : un Entrée réflexe ne détruit
  * rien. Échap annule, comme partout ailleurs. L'action destructrice reste un

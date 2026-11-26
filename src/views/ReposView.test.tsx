@@ -332,6 +332,7 @@ describe("ReposView", () => {
     render(<Harness environment={debian} />);
     await screen.findByText("MailFlow");
 
+    fireEvent.click(screen.getByRole("button", { name: /ajouter un dépôt/i }));
     const field = screen.getByLabelText(/ajouter un dépôt github/i);
     fireEvent.change(field, { target: { value: "n'importe quoi" } });
     fireEvent.click(screen.getByRole("button", { name: /^ajouter$/i }));
@@ -346,6 +347,7 @@ describe("ReposView", () => {
     render(<Harness environment={debian} />);
     await screen.findByText("MailFlow");
 
+    fireEvent.click(screen.getByRole("button", { name: /ajouter un dépôt/i }));
     fireEvent.change(screen.getByLabelText(/ajouter un dépôt github/i), {
       target: { value: "microsoft/vscode" },
     });
@@ -353,6 +355,36 @@ describe("ReposView", () => {
 
     await waitFor(() => expect(addRepo).toHaveBeenCalledWith("microsoft/vscode"));
     await waitFor(() => expect(listRepos).toHaveBeenCalledTimes(2));
+  });
+
+  it("referme la fenêtre d'ajout une fois le dépôt accepté", async () => {
+    addRepo.mockResolvedValue("microsoft/vscode");
+
+    render(<Harness environment={debian} />);
+    await screen.findByText("MailFlow");
+
+    fireEvent.click(screen.getByRole("button", { name: /ajouter un dépôt/i }));
+    fireEvent.change(screen.getByLabelText(/ajouter un dépôt github/i), {
+      target: { value: "microsoft/vscode" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^ajouter$/i }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("filtre le catalogue selon la recherche", async () => {
+    listRepos.mockResolvedValue([row, { ...row, slug: "TISEPSE/Nexus", label: "Nexus" }]);
+
+    render(<Harness environment={debian} />);
+    await screen.findByText("Nexus");
+
+    const search = screen.getByRole("searchbox", { name: /chercher un dépôt/i });
+    fireEvent.change(search, { target: { value: "nex" } });
+    expect(screen.queryByText("MailFlow")).toBeNull();
+    expect(screen.getByText("Nexus")).toBeTruthy();
+
+    fireEvent.change(search, { target: { value: "introuvable" } });
+    expect(screen.getByText(/aucun dépôt ne correspond/i)).toBeTruthy();
   });
 
   describe("installer en collant une URL", () => {
@@ -374,11 +406,12 @@ describe("ReposView", () => {
     /** Colle l'URL et appuie sur le bouton « Installer » du formulaire. */
     async function pasteAndInstall(input: string) {
       await screen.findByText("MailFlow");
+      fireEvent.click(screen.getByRole("button", { name: /ajouter un dépôt/i }));
       fireEvent.change(screen.getByLabelText(/ajouter un dépôt github/i), {
         target: { value: input },
       });
-      const form = screen.getByRole("form", { name: /ajouter un dépôt/i });
-      fireEvent.click(within(form).getByRole("button", { name: /^installer$/i }));
+      const dialog = screen.getByRole("dialog", { name: /ajouter un dépôt/i });
+      fireEvent.click(within(dialog).getByRole("button", { name: /^installer$/i }));
     }
 
     it("ajoute le dépôt et l'installe dans la foulée", async () => {
@@ -508,7 +541,7 @@ describe("ReposView", () => {
     await waitFor(() => expect(screen.getByRole("progressbar")).toBeTruthy());
     // Le catalogue reste là : une opération ne fait pas disparaître le reste.
     expect(screen.getByText("MailFlow")).toBeTruthy();
-    expect(screen.getByLabelText(/ajouter un dépôt github/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /ajouter un dépôt/i })).toBeTruthy();
   });
 
   it("empile un second dépôt pendant que le premier s'installe", async () => {
@@ -579,7 +612,7 @@ describe("ReposView", () => {
     render(<Harness environment={debian} />);
 
     // Rien à attendre pour coller une URL : seule la liste patiente.
-    expect(screen.getByLabelText(/ajouter un dépôt github/i)).toBeTruthy();
+    expect(screen.getByRole("button", { name: /ajouter un dépôt/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /vérifier maintenant/i })).toBeTruthy();
   });
 

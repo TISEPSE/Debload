@@ -4,11 +4,11 @@ import {
   ArrowClockwise,
   ArrowsClockwise,
   Check,
-  DownloadSimple,
-  GithubLogo,
+  MagnifyingGlass,
   Plus,
 } from "@phosphor-icons/react";
 
+import { AddRepoDialog } from "../components/AddRepoDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { LogPanel } from "../components/LogPanel";
 import { ProgressBar } from "../components/ProgressBar";
@@ -44,7 +44,13 @@ interface ReposViewProps {
 export function ReposView({ environment, refreshToken }: ReposViewProps) {
   const [rows, setRows] = useState<RepoRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  /** La fenêtre d'ajout est ouverte. */
+  const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  /** Référence refusée, dite dans la fenêtre d'ajout. */
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   /** Dépôt collé pour être installé, dont la release attend qu'on choisisse. */
   const [choosing, setChoosing] = useState<string | null>(null);
@@ -67,6 +73,17 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
   // La liste des slugs pilote le rafraîchissement ; elle ne doit changer
   // d'identité que lorsque le catalogue change vraiment.
   const slugs = useMemo(() => rows.map((row) => row.slug), [rows]);
+
+  /** Les lignes dont le nom, le slug ou la description contient la recherche. */
+  const shown = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (needle === "") return rows;
+    return rows.filter((row) =>
+      [row.label, row.slug, row.description ?? ""].some((text) =>
+        text.toLowerCase().includes(needle),
+      ),
+    );
+  }, [rows, query]);
   const { releases, checking, refreshAll, refreshOne } = useReleases(
     slugs,
     environment.settings.autoRefreshMinutes,
@@ -147,16 +164,31 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
     if (input === "") return null;
 
     setChoosing(null);
+    setSubmitting(true);
     try {
       const slug = await addRepo(input);
       setDraft("");
+      setDraftError(null);
       setAddError(null);
+      setAdding(false);
       return slug;
     } catch (error) {
-      setAddError(formatError(error));
+      setDraftError(formatError(error));
       return null;
+    } finally {
+      setSubmitting(false);
     }
   }, [draft]);
+
+  const openAdd = useCallback(() => {
+    setDraftError(null);
+    setAdding(true);
+  }, []);
+
+  const closeAdd = useCallback(() => {
+    setAdding(false);
+    setDraftError(null);
+  }, []);
 
   const submitAdd = useCallback(async () => {
     if ((await addDraft()) !== null) await reload();
@@ -171,9 +203,7 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
    * indéfiniment sur la même question.
    */
   const submitInstall = useCallback(
-    async (event: React.FormEvent) => {
-      event.preventDefault();
-
+    async () => {
       const slug = await addDraft();
       if (slug === null) return;
 
@@ -240,32 +270,25 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
     <div className="view">
       {/* Entrée installe : c'est le geste pour lequel on colle une URL.
           « Ajouter » reste là pour suivre un dépôt sans rien poser. */}
-      <form className="repo-add" aria-label="Ajouter un dépôt" onSubmit={submitInstall}>
-        <span className="input-icon">
-          <GithubLogo size={18} className="input-icon__glyph" aria-hidden="true" />
-          <input
-            type="text"
-            className="input repo-add__field"
-            placeholder="Ajouter un dépôt : owner/repo ou une URL GitHub"
-            aria-label="Ajouter un dépôt GitHub"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-        </span>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={draft.trim() === ""}
-          onClick={() => void submitAdd()}
-        >
+      <div className="repo-add">
+        <form className="repo-add__search" role="search" onSubmit={(event) => event.preventDefault()}>
+          <span className="input-icon">
+            <MagnifyingGlass size={18} className="input-icon__glyph" aria-hidden="true" />
+            <input
+              type="search"
+              className="input repo-add__field"
+              placeholder="Chercher dans le catalogue…"
+              aria-label="Chercher un dépôt"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </span>
+        </form>
+        <button type="button" className="btn btn-primary repo-add__open" onClick={openAdd}>
           <Plus size={16} aria-hidden="true" />
-          Ajouter
+          Ajouter un dépôt
         </button>
-        <button type="submit" className="btn btn-primary" disabled={draft.trim() === ""}>
-          <DownloadSimple size={16} aria-hidden="true" />
-          Installer
-        </button>
-      </form>
+      </div>
 
       <div className="repo-bar">
         <span className="repo-bar__state">
@@ -316,9 +339,11 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
         <p className="empty">
           Le catalogue est vide. Ajoute un dépôt GitHub pour commencer.
         </p>
+      ) : shown.length === 0 ? (
+        <p className="empty">Aucun dépôt ne correspond à « {query.trim()} ».</p>
       ) : (
         <ul className="tile-grid tile-grid--repos">
-          {rows.map((row) => (
+          {shown.map((row) => (
             <RepoLine
               key={row.slug}
               row={row}
@@ -336,6 +361,18 @@ export function ReposView({ environment, refreshToken }: ReposViewProps) {
             />
           ))}
         </ul>
+      )}
+
+      {adding && (
+        <AddRepoDialog
+          value={draft}
+          error={draftError}
+          busy={submitting}
+          onChange={setDraft}
+          onAdd={() => void submitAdd()}
+          onInstall={() => void submitInstall()}
+          onCancel={closeAdd}
+        />
       )}
 
       {pending && (
